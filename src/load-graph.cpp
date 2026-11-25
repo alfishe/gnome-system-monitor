@@ -147,19 +147,18 @@ load_graph_rescale (LoadGraph *graph)
   gsm_graph_set_font_size (GSM_GRAPH (graph->disp), 8 * graph->font_settings->get_double ("text-scaling-factor"));
 }
 
-static cairo_surface_t*
-create_background (LoadGraph *graph,
-                   int        width,
-                   int        height)
+/* Paints frame, grid and labels. width/height exclude the frame. */
+static void
+paint_background (LoadGraph *graph,
+                  cairo_t   *cr,
+                  int        width,
+                  int        height)
 {
   GdkRGBA fg_color;
   GdkRGBA grid_color;
-  GtkAllocation allocation;
   PangoContext *pango_context;
   PangoFontDescription *font_desc;
   PangoLayout *layout;
-  cairo_t *cr;
-  cairo_surface_t *surface;
   guint frames_per_unit = gsm_graph_get_frames_per_unit (graph->disp);
   double fontsize = gsm_graph_get_font_size (graph->disp);
   double rmargin = gsm_graph_get_right_margin (graph->disp);
@@ -171,11 +170,7 @@ create_background (LoadGraph *graph,
   /* Graph length */
   const unsigned total_seconds = graph->speed * (graph->num_points - 2) / 1000 * frames_per_unit;
 
-  gtk_widget_get_allocation (GTK_WIDGET (graph->disp), &allocation);
-  surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-                                        allocation.width,
-                                        allocation.height);
-  cr = cairo_create (surface);
+  cairo_save (cr);
 
   /* Create grid label layout */
   layout = pango_cairo_create_layout (cr);
@@ -330,75 +325,62 @@ create_background (LoadGraph *graph,
   cairo_stroke (cr);
 
   g_object_unref (layout);
-  cairo_destroy (cr);
-
-  return surface;
+  cairo_restore (cr);
 }
 
 static void
-load_graph_draw (GtkDrawingArea* area,
-                 cairo_t *cr,
-                 int      width,
-                 int      height,
-                 gpointer data_ptr)
+load_graph_layout (GsmGraph       *disp,
+                   int             width,
+                   int             height,
+                   GsmGraphLayout *layout,
+                   gpointer        data_ptr)
 {
   LoadGraph * const graph = static_cast<LoadGraph*>(data_ptr);
-  cairo_surface_t * background;
-  guint frames_per_unit = gsm_graph_get_frames_per_unit (GSM_GRAPH (area));
-  guint render_counter = gsm_graph_get_render_counter (GSM_GRAPH (area));
-  double rmargin = gsm_graph_get_right_margin (GSM_GRAPH (area));
-  guint num_points = gsm_graph_get_num_points (GSM_GRAPH (area));
-  guint indent = gsm_graph_get_indent (GSM_GRAPH (area));
-  graph->num_bars = gsm_graph_get_num_bars (GSM_GRAPH (area), height);
+  double rmargin = gsm_graph_get_right_margin (disp);
+  guint indent = gsm_graph_get_indent (disp);
 
   /* Initialize graph dimensions */
   width -= 2 * FRAME_WIDTH;
   height -= 2 * FRAME_WIDTH;
 
+  graph->num_bars = gsm_graph_get_num_bars (disp, height);
   graph->graph_dely = (height - 15) / graph->num_bars;   /* round to int to avoid AA blur */
   graph->real_draw_height = graph->graph_dely * graph->num_bars;
 
+  graphene_rect_init (&layout->plot,
+                      indent + FRAME_WIDTH,
+                      FRAME_WIDTH,
+                      width - rmargin - indent,
+                      graph->real_draw_height);
+
   /* Number of pixels wide for one sample point */
-  const double x_step = double(width - rmargin - graph->indent) / (graph->num_points - 2);
+  layout->x_step = double(width - rmargin - graph->indent) / (graph->num_points - 2);
+}
 
-  /* Lines start at the right edge of the drawing,
-   * a bit outside the clip rectangle. */
-  /* Adjustment for smooth movement between samples */
-  double x_offset = width - rmargin + FRAME_WIDTH;
+static void
+paint_curves (LoadGraph            *graph,
+              cairo_t              *cr,
+              int                   width,
+              const GsmGraphLayout *layout)
+{
+  double rmargin = gsm_graph_get_right_margin (graph->disp);
+  guint num_points = gsm_graph_get_num_points (graph->disp);
+  const double x_step = layout->x_step;
 
-  /* Shift the x position of the most recent (shown rightmost) value outside of the clip area in order
-     to be able to simulate continuous, smooth movement without the line being cut off at its ends */
-  x_offset += x_step * (1 - render_counter / double(frames_per_unit));
-
-  /* Draw background */
-  if (!gsm_graph_is_background_set (GSM_GRAPH (graph->disp))) {
-    background = create_background (graph, width, height);
-    gsm_graph_set_background (GSM_GRAPH (graph->disp), background);
-  } else {
-    background = gsm_graph_get_background (GSM_GRAPH (graph->disp));
-  }
-
-  cairo_set_source_surface (cr, background, 0, 0);
-  cairo_paint (cr);
+  /* The most recent (rightmost) value is placed one step outside of the
+     plot area; GsmGraph scrolls the layer to the left between samples to
+     simulate continuous, smooth movement without cutting off the line. */
+  const double x_offset = width - 2 * FRAME_WIDTH - rmargin + FRAME_WIDTH + x_step;
 
   /* Set the drawing style */
   cairo_set_line_width (cr, 1);
   cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
   cairo_set_line_join (cr, CAIRO_LINE_JOIN_ROUND);
 
-  /* Clip the drawing area to the inside of the drawn background */
-  cairo_rectangle (cr,
-                   indent + FRAME_WIDTH,
-                   FRAME_WIDTH,
-                   width - rmargin - indent,
-                   graph->real_draw_height);
-  cairo_clip (cr);
-
   bool drawStacked = graph->type == LOAD_GRAPH_CPU && GsmApplication::get ()->config.draw_stacked;
   bool drawSmooth = GsmApplication::get ()->config.draw_smooth;
-  gsm_graph_set_smooth_chart (GSM_GRAPH (area), drawSmooth);
-  gsm_graph_set_stacked_chart (GSM_GRAPH (area), drawStacked);
-  
+  gsm_graph_set_smooth_chart (graph->disp, drawSmooth);
+  gsm_graph_set_stacked_chart (graph->disp, drawStacked);
 
   const double y_base = FRAME_WIDTH;
 
@@ -449,6 +431,29 @@ load_graph_draw (GtkDrawingArea* area,
         {
           cairo_stroke (cr);
         }
+    }
+}
+
+static void
+load_graph_paint (GsmGraph             *,
+                  GsmGraphLayer         layer,
+                  cairo_t              *cr,
+                  int                   width,
+                  int                   height,
+                  const GsmGraphLayout *layout,
+                  gpointer              data_ptr)
+{
+  LoadGraph * const graph = static_cast<LoadGraph*>(data_ptr);
+
+  switch (layer)
+    {
+      case GSM_GRAPH_LAYER_BACKGROUND:
+        paint_background (graph, cr, width - 2 * FRAME_WIDTH, height - 2 * FRAME_WIDTH);
+        break;
+
+      case GSM_GRAPH_LAYER_CURVES:
+        paint_curves (graph, cr, width, layout);
+        break;
     }
 }
 
@@ -1043,10 +1048,7 @@ LoadGraph::LoadGraph(guint type)
 
   gtk_widget_set_vexpand (GTK_WIDGET (disp), TRUE);
   gtk_widget_set_hexpand (GTK_WIDGET (disp), TRUE);
-  gtk_drawing_area_set_draw_func (GTK_DRAWING_AREA (disp),
-                                  load_graph_draw,
-                                  this,
-                                  NULL);
+  gsm_graph_set_render_functions (disp, load_graph_layout, load_graph_paint, this);
   g_signal_connect (G_OBJECT (disp), "destroy",
                     G_CALLBACK (load_graph_destroy), this);
   gtk_box_prepend (main_widget, GTK_WIDGET (disp));

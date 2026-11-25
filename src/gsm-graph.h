@@ -34,6 +34,43 @@ typedef struct _GsmGraph GsmGraph;
 typedef struct _GsmGraphClass GsmGraphClass;
 typedef struct _GsmGraphPrivate GsmGraphPrivate;
 
+/* The graph is rendered as two cached layers:
+ *  - BACKGROUND: frame, grid and labels; covers the whole widget and is only
+ *    re-rendered when the size, scale or a display setting changes.
+ *  - CURVES: the data lines; re-rendered once per new data sample.
+ * Between samples the cached CURVES layer is only blitted at a whole-pixel
+ * offset (scrolled), so animation frames don't rasterize anything. */
+typedef enum
+{
+  GSM_GRAPH_LAYER_BACKGROUND,
+  GSM_GRAPH_LAYER_CURVES,
+} GsmGraphLayer;
+
+typedef struct
+{
+  /* area the curves are visible in, in widget coordinates */
+  graphene_rect_t plot;
+  /* horizontal distance between two consecutive samples */
+  double x_step;
+} GsmGraphLayout;
+
+typedef void (*GsmGraphLayoutFunc) (GsmGraph       *graph,
+                                    int             width,
+                                    int             height,
+                                    GsmGraphLayout *layout,
+                                    gpointer        user_data);
+
+/* Paints @layer for a widget of @width x @height into @cr (widget coordinates).
+ * The CURVES layer must be painted at scroll phase 0, i.e. with the newest
+ * sample one x_step to the right of the plot area. */
+typedef void (*GsmGraphPaintFunc) (GsmGraph             *graph,
+                                   GsmGraphLayer         layer,
+                                   cairo_t              *cr,
+                                   int                   width,
+                                   int                   height,
+                                   const GsmGraphLayout *layout,
+                                   gpointer              user_data);
+
 struct _GsmGraph
 {
   GtkDrawingArea parent_instance;
@@ -45,9 +82,17 @@ struct _GsmGraphPrivate
   
   // internal usage for animations
   
-  guint render_counter;
+  // a new data sample is taken every speed * frames_per_unit ms
   guint frames_per_unit;
-  guint redraw_timeout;
+  guint sample_timeout;
+  // frame clock tick driving the smooth scrolling
+  guint tick_id;
+  // monotonic time (us) of the latest sample
+  gint64 last_sample_time;
+  // scroll offset (device pixels) of the last queued frame
+  double drawn_shift;
+  // x_step of the last layout, used by the tick callback
+  double x_step;
 
   // used for displaying, configurable
 
@@ -70,9 +115,22 @@ struct _GsmGraphPrivate
 
   // right margin
   double rmargin;
-  // cached background surface
-  cairo_surface_t *background;
   guint indent;
+
+  // render callbacks
+  GsmGraphLayoutFunc layout_func;
+  GsmGraphPaintFunc paint_func;
+  gpointer paint_data;
+
+  // cached layers
+  cairo_surface_t *background;
+  cairo_surface_t *curves;
+  graphene_rect_t curves_bounds;
+  guint64 data_generation;
+  guint64 curves_generation;
+  int cache_width;
+  int cache_height;
+  double cache_scale;
   
   // function to calculate the latest set of data to display
   GSourceFunc data_function;
@@ -103,13 +161,13 @@ void                gsm_graph_set_smooth_chart (GsmGraph*, gboolean);
 void                gsm_graph_set_stacked_chart (GsmGraph*, gboolean);
 void                gsm_graph_set_speed (GsmGraph*, guint);
 void                gsm_graph_set_data_function (GsmGraph*, GSourceFunc, gpointer);
+void                gsm_graph_set_render_functions (GsmGraph*, GsmGraphLayoutFunc, GsmGraphPaintFunc, gpointer);
 void                gsm_graph_set_font_size (GsmGraph*, double);
 void                gsm_graph_set_num_points (GsmGraph*, guint);
 void                gsm_graph_set_max_value (GsmGraph*, guint64);
 
-// temporary exported setter methods
+// drop the cached layers so they are re-rendered on the next frame
 void                gsm_graph_clear_background (GsmGraph*);
-void                gsm_graph_set_background (GsmGraph*, cairo_surface_t*);
 
 // public getter methods
 gboolean            gsm_graph_is_logarithmic_scale (GsmGraph*);
@@ -122,10 +180,7 @@ guint               gsm_graph_get_num_points (GsmGraph*);
 guint64             gsm_graph_get_max_value (GsmGraph*);
 
 // temporary exported methods for the migration
-gboolean            gsm_graph_is_background_set (GsmGraph*);
-cairo_surface_t *   gsm_graph_get_background (GsmGraph*);
 guint               gsm_graph_get_frames_per_unit (GsmGraph*);
-guint               gsm_graph_get_render_counter (GsmGraph*);
 guint               gsm_graph_get_indent (GsmGraph*);
 double              gsm_graph_get_right_margin (GsmGraph*);
 guint               gsm_graph_get_num_bars (GsmGraph*, gint);

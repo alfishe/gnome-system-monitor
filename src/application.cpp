@@ -211,6 +211,7 @@ cb_color_changed (Gio::Settings& settings,
             app->cpu_graph->colors[i] = app->config.cpu_color[i];
             break;
           }
+      app->cpu_graph->clear_background ();
       return;
     }
 
@@ -246,6 +247,10 @@ cb_color_changed (Gio::Settings& settings,
       gdk_rgba_parse (&app->config.disk_write_color, color.c_str ());
       app->disk_graph->colors.at (1) = app->config.disk_write_color;
     }
+
+  app->mem_graph->clear_background ();
+  app->net_graph->clear_background ();
+  app->disk_graph->clear_background ();
 }
 
 void
