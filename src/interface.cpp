@@ -293,10 +293,12 @@ create_gpu_section (GsmApplication *app,
       gchar *title_text = g_strdup_printf (title_template, gtk_label_get_text (labels->gpu_name[i]));
       gsm_color_button_set_title (color_picker, title_text);
       g_free (title_text);
-      gtk_grid_attach (table, GTK_WIDGET (color_picker), 0, i, 1, 1);
-
+      // per GPU: its name, then two columns of values like the network and
+      // disk sections
+      const guint row = 3 * i;
+      gtk_grid_attach (table, GTK_WIDGET (color_picker), 0, row, 1, 1);
       gtk_widget_set_hexpand (GTK_WIDGET (labels->gpu_name[i]), TRUE);
-      gtk_grid_attach (table, GTK_WIDGET (labels->gpu_name[i]), 1, i, 1, 1);
+      gtk_grid_attach (table, GTK_WIDGET (labels->gpu_name[i]), 1, row, 4, 1);
 
       const struct
       {
@@ -310,11 +312,12 @@ create_gpu_section (GsmApplication *app,
       };
       for (guint f = 0; f < G_N_ELEMENTS (fields); f++)
         {
+          const guint column = 1 + 2 * (f / 2);
           GtkWidget *caption = gtk_label_new (fields[f].caption);
           gtk_widget_set_halign (caption, GTK_ALIGN_START);
-          gtk_widget_set_margin_start (caption, 12);
-          gtk_grid_attach (table, caption, 2 + 2 * f, i, 1, 1);
-          gtk_grid_attach (table, GTK_WIDGET (fields[f].value), 3 + 2 * f, i, 1, 1);
+          gtk_grid_attach (table, caption, column, row + 1 + f % 2, 1, 1);
+          gtk_widget_set_hexpand (GTK_WIDGET (fields[f].value), TRUE);
+          gtk_grid_attach (table, GTK_WIDGET (fields[f].value), column + 1, row + 1 + f % 2, 1, 1);
         }
     }
 
