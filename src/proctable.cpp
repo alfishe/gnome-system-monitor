@@ -39,6 +39,7 @@
 #include <pwd.h>
 #include <time.h>
 
+#include <algorithm>
 #include <set>
 #include <list>
 
@@ -618,6 +619,8 @@ proctable_new (GsmApplication * const app)
           case COL_DISK_WRITE_CURRENT:
           case COL_CPU_TIME:
           case COL_MEM:
+          case COL_GPU:
+          case COL_GPU_MEM:
             g_object_set (G_OBJECT (cell), "xalign", 1.0f, NULL);
             break;
         }
@@ -668,6 +671,27 @@ proctable_new (GsmApplication * const app)
     gsm_tree_view_add_excluded_column (proctree, COL_SECURITYCONTEXT);
 
   gsm_tree_view_load_state (proctree);
+
+  // Columns missing from the saved order (new columns, or the default
+  // order) are appended at the end; put the GPU ones next to their CPU and
+  // memory counterparts instead. Once the order is saved with them, it is
+  // respected.
+  {
+    GVariant *order = g_settings_get_value (settings, "columns-order");
+    gsize n_order;
+    const gint32 *ids = (const gint32 *) g_variant_get_fixed_array (order, &n_order, sizeof (gint32));
+    const struct { gint column, after; } placement[] = {
+      { COL_GPU, COL_CPU },
+      { COL_GPU_MEM, COL_MEM },
+    };
+
+    for (const auto&p : placement)
+      if (std::find (ids, ids + n_order, p.column) == ids + n_order)
+        gtk_tree_view_move_column_after (GTK_TREE_VIEW (proctree),
+                                         gsm_tree_view_get_column_from_id (proctree, p.column),
+                                         gsm_tree_view_get_column_from_id (proctree, p.after));
+    g_variant_unref (order);
+  }
 
   // All columns are GTK_TREE_VIEW_COLUMN_FIXED and every row has the same
   // height, so let the tree view skip measuring each row's cells.
