@@ -123,8 +123,10 @@ struct _GsmGraphPrivate
   gpointer paint_data;
 
   // cached layers
-  cairo_surface_t *background;
-  cairo_surface_t *curves;
+  // render nodes reused across frames: GSK skips identical nodes when
+  // computing damage, so only the scrolling plot area is repainted
+  GskRenderNode *background;
+  GskRenderNode *curves;
   graphene_rect_t curves_bounds;
   guint64 data_generation;
   guint64 curves_generation;

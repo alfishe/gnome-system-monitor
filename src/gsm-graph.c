@@ -125,7 +125,25 @@ gsm_graph_get_property (GObject    *object,
     }
 }
 
-static cairo_surface_t *
+/* A cairo node showing the part of @surface (placed at @origin) inside @rect.
+ * Drawing it is a single blit, unfiltered as long as it lands on device
+ * pixels. */
+static GskRenderNode *
+node_for_surface (cairo_surface_t        *surface,
+                  const graphene_point_t *origin,
+                  const graphene_rect_t  *rect)
+{
+  GskRenderNode *node = gsk_cairo_node_new (rect);
+  cairo_t *cr = gsk_cairo_node_get_draw_context (node);
+
+  cairo_set_source_surface (cr, surface, origin->x, origin->y);
+  cairo_paint (cr);
+  cairo_destroy (cr);
+
+  return node;
+}
+
+static GskRenderNode *
 gsm_graph_render_layer (GsmGraph             *self,
                         GsmGraphLayer         layer,
                         const graphene_rect_t*bounds,
@@ -149,25 +167,12 @@ gsm_graph_render_layer (GsmGraph             *self,
   priv->paint_func (self, layer, cr, width, height, layout, priv->paint_data);
   cairo_destroy (cr);
 
-  return surface;
-}
+  graphene_rect_t rect = GRAPHENE_RECT_INIT (bounds->origin.x, bounds->origin.y,
+                                             pixel_width / scale, pixel_height / scale);
+  GskRenderNode *node = node_for_surface (surface, &rect.origin, &rect);
+  cairo_surface_destroy (surface);
 
-/* Blits a cached layer; x/y must be on device pixels so pixman takes its
- * unfiltered fast path. */
-static void
-append_layer (GtkSnapshot     *snapshot,
-              cairo_surface_t *surface,
-              double           x,
-              double           y,
-              double           scale)
-{
-  cairo_t *cr = gtk_snapshot_append_cairo (snapshot,
-                                           &GRAPHENE_RECT_INIT (x, y,
-                                                                cairo_image_surface_get_width (surface) / scale,
-                                                                cairo_image_surface_get_height (surface) / scale));
-  cairo_set_source_surface (cr, surface, x, y);
-  cairo_paint (cr);
-  cairo_destroy (cr);
+  return node;
 }
 
 static double
@@ -248,7 +253,7 @@ gsm_graph_snapshot (GtkWidget   *widget,
     {
       /* The layer is one sample wider than the plot (plus room for the line
        * caps), so it can be scrolled left by up to one x_step. */
-      g_clear_pointer (&priv->curves, cairo_surface_destroy);
+      g_clear_pointer (&priv->curves, gsk_render_node_unref);
       priv->curves_bounds = GRAPHENE_RECT_INIT (floor (layout.plot.origin.x * scale) / scale,
                                                 floor (layout.plot.origin.y * scale) / scale,
                                                 layout.plot.size.width + layout.x_step + 2,
@@ -259,7 +264,7 @@ gsm_graph_snapshot (GtkWidget   *widget,
     }
 
   if (priv->background)
-    append_layer (snapshot, priv->background, 0, 0, scale);
+    gtk_snapshot_append_node (snapshot, priv->background);
 
   if (priv->curves)
     {
@@ -270,9 +275,10 @@ gsm_graph_snapshot (GtkWidget   *widget,
       priv->drawn_shift = shift;
 
       gtk_snapshot_push_clip (snapshot, &layout.plot);
-      append_layer (snapshot, priv->curves,
-                    priv->curves_bounds.origin.x - shift / scale,
-                    priv->curves_bounds.origin.y, scale);
+      gtk_snapshot_save (snapshot);
+      gtk_snapshot_translate (snapshot, &GRAPHENE_POINT_INIT (-shift / scale, 0));
+      gtk_snapshot_append_node (snapshot, priv->curves);
+      gtk_snapshot_restore (snapshot);
       gtk_snapshot_pop (snapshot);
     }
 }
@@ -546,8 +552,8 @@ gsm_graph_clear_background (GsmGraph *self)
   g_return_if_fail (GSM_IS_GRAPH (self));
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
 
-  g_clear_pointer (&priv->background, cairo_surface_destroy);
-  g_clear_pointer (&priv->curves, cairo_surface_destroy);
+  g_clear_pointer (&priv->background, gsk_render_node_unref);
+  g_clear_pointer (&priv->curves, gsk_render_node_unref);
 }
 
 void
