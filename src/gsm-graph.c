@@ -195,24 +195,26 @@ gsm_graph_get_sample_period (GsmGraph *self)
   return MAX (priv->speed * priv->frames_per_unit, 1);
 }
 
-/* Upper bound for the scrolling animation frame rate */
+/* Rate of the scrolling animation */
 #define GSM_GRAPH_MAX_FPS 30
 
-/* Fraction [0, 1] of the way from the latest sample to the next one, based on
- * the current frame time, so the scrolling speed is independent of the frame
- * rate and of timer jitter. The time is quantized to 1/GSM_GRAPH_MAX_FPS
- * slots shared by all graphs (they use the same frame clock), so they all
- * move in the same frames and the window repaints at most GSM_GRAPH_MAX_FPS
- * times per second. */
+/* One animation clock shared by all shown graphs, so they all move in the
+ * same frames and the window repaints at most GSM_GRAPH_MAX_FPS times per
+ * second; between steps nothing runs. */
+static GList *animated_graphs;
+static guint animation_source;
+static gint64 animation_time;
+
+static void gsm_graph_set_animated (GsmGraph *self, gboolean animated);
+
+/* Fraction [0, 1] of the way from the latest sample to the next one at the
+ * current animation step, so the scrolling speed is independent of the frame
+ * rate and of timer jitter. */
 static double
 gsm_graph_get_scroll_phase (GsmGraph *self)
 {
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
-  GdkFrameClock *clock = gtk_widget_get_frame_clock (GTK_WIDGET (self));
-  gint64 now = clock ? gdk_frame_clock_get_frame_time (clock) : g_get_monotonic_time ();
-  const gint64 slot = G_USEC_PER_SEC / GSM_GRAPH_MAX_FPS;
-
-  now -= now % slot;
+  gint64 now = animation_time ? animation_time : g_get_monotonic_time ();
   double phase = (now - priv->last_sample_time) / (1000.0 * gsm_graph_get_sample_period (self));
 
   return CLAMP (phase, 0.0, 1.0);
@@ -336,11 +338,7 @@ gsm_graph_dispose (GObject *self)
 
   gsm_graph_clear_background (GSM_GRAPH (self));
   g_clear_handle_id (&priv->sample_timeout, g_source_remove);
-  if (priv->tick_id)
-    {
-      gtk_widget_remove_tick_callback (GTK_WIDGET (self), priv->tick_id);
-      priv->tick_id = 0;
-    }
+  gsm_graph_set_animated (GSM_GRAPH (self), FALSE);
 
   G_OBJECT_CLASS (gsm_graph_parent_class)->dispose (G_OBJECT (self));
 }
@@ -391,25 +389,46 @@ _gsm_graph_restart_sampling (GsmGraph *self)
                                         self);
 }
 
-/* Runs once per display frame while the graph is shown. The picture only
- * changes when the scroll offset moves by a whole device pixel, so the redraw
- * rate follows the scrolling speed (~20/s with default settings), and the
- * time quantization in gsm_graph_get_scroll_phase() caps it at
- * GSM_GRAPH_MAX_FPS. */
+/* One animation step. A graph is only redrawn when its scroll offset moved
+ * by a whole device pixel, so the redraw rate follows the scrolling speed
+ * (~20/s with default settings), at most GSM_GRAPH_MAX_FPS. */
 static gboolean
-_gsm_graph_tick (GtkWidget     *widget,
-                 GdkFrameClock *,
-                 gpointer)
+gsm_graph_animation_step (gpointer)
 {
-  GsmGraph *self = GSM_GRAPH (widget);
-  GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
-  double scale = gsm_graph_get_surface_scale (widget);
-  double shift = round (priv->x_step * gsm_graph_get_scroll_phase (self) * scale);
+  animation_time = g_get_monotonic_time ();
 
-  if (shift != priv->drawn_shift)
-    gtk_widget_queue_draw (widget);
+  for (GList *l = animated_graphs; l != NULL; l = l->next)
+    {
+      GsmGraph *self = GSM_GRAPH (l->data);
+      GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
+      double scale = gsm_graph_get_surface_scale (GTK_WIDGET (self));
+      double shift = round (priv->x_step * gsm_graph_get_scroll_phase (self) * scale);
+
+      if (shift != priv->drawn_shift)
+        gtk_widget_queue_draw (GTK_WIDGET (self));
+    }
 
   return G_SOURCE_CONTINUE;
+}
+
+static void
+gsm_graph_set_animated (GsmGraph *self,
+                        gboolean  animated)
+{
+  GList *link = g_list_find (animated_graphs, self);
+
+  if (animated && link == NULL)
+    animated_graphs = g_list_prepend (animated_graphs, self);
+  else if (!animated && link != NULL)
+    animated_graphs = g_list_delete_link (animated_graphs, link);
+
+  if (animated_graphs != NULL && animation_source == 0)
+    animation_source = g_timeout_add (1000 / GSM_GRAPH_MAX_FPS, gsm_graph_animation_step, NULL);
+  else if (animated_graphs == NULL)
+    {
+      g_clear_handle_id (&animation_source, g_source_remove);
+      animation_time = 0;
+    }
 }
 
 static void
@@ -535,8 +554,7 @@ gsm_graph_start (GsmGraph *self)
       _gsm_graph_restart_sampling (self);
     }
 
-  if (priv->tick_id == 0)
-    priv->tick_id = gtk_widget_add_tick_callback (GTK_WIDGET (self), _gsm_graph_tick, NULL, NULL);
+  gsm_graph_set_animated (self, TRUE);
 }
 
 void
@@ -606,14 +624,8 @@ void
 gsm_graph_stop (GsmGraph *self)
 {
   /* stop drawing, the data function keeps being polled */
-  GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
-
   _gsm_graph_set_draw (self, FALSE);
-  if (priv->tick_id)
-    {
-      gtk_widget_remove_tick_callback (GTK_WIDGET (self), priv->tick_id);
-      priv->tick_id = 0;
-    }
+  gsm_graph_set_animated (self, FALSE);
 }
 
 gboolean
