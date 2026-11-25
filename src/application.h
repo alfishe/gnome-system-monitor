@@ -129,6 +129,8 @@ struct MutableProcInfo
   gdouble pcpu;
   gint nice;
   std::string cgroup_name;
+  // raw contents of /proc/<pid>/cgroup when cgroup_name was computed
+  std::string cgroup_file;
 
   std::string unit;
   std::string session;

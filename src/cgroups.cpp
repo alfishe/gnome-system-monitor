@@ -2,6 +2,8 @@
 #include "cgroups.h"
 #include "util.h"
 
+#include <fcntl.h>
+#include <unistd.h>
 #include <map>
 #include <unordered_map>
 #include <utility>
@@ -56,20 +58,31 @@ parse_cgroup_line (const std::string&line)
 }
 
 
-static const std::string&
-get_process_cgroup_string (pid_t pid)
+/* Reads /proc/<pid>/cgroup; empty if the process is gone. */
+static std::string
+read_cgroup_file (pid_t pid)
 {
-  static std::unordered_map<std::string, std::string> file_cache{ { "", "" } };
-
-  /* read out of /proc/pid/cgroup */
-  auto path = "/proc/" + std::to_string (pid) + "/cgroup";
+  char path[32];
+  char buf[4096];
   std::string text;
 
-  try {
-      text = Glib::file_get_contents (path);
-    } catch (...) {
-      return file_cache[""];
-    }
+  g_snprintf (path, sizeof path, "/proc/%d/cgroup", pid);
+  int fd = open (path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0)
+    return text;
+
+  ssize_t n;
+  while ((n = read (fd, buf, sizeof buf)) > 0)
+    text.append (buf, n);
+  close (fd);
+
+  return text;
+}
+
+static const std::string&
+get_process_cgroup_string (const std::string&text)
+{
+  static std::unordered_map<std::string, std::string> file_cache{ { "", "" } };
 
   auto it = file_cache.insert ({ text, "" });
 
@@ -111,13 +124,19 @@ get_process_cgroup_string (pid_t pid)
 }
 
 
-void
+bool
 get_process_cgroup_info (ProcInfo&info)
 {
   if (not cgroups_enabled ())
-    return;
+    return true;
 
-  const auto&cgroup_string = get_process_cgroup_string (info.pid);
+  std::string text = read_cgroup_file (info.pid);
 
-  info.cgroup_name = cgroup_string;
+  if (!info.cgroup_file.empty () && text == info.cgroup_file)
+    return false;
+
+  info.cgroup_name = get_process_cgroup_string (text);
+  info.cgroup_file = std::move (text);
+
+  return true;
 }

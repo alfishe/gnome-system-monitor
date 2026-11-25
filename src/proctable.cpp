@@ -1005,10 +1005,10 @@ update_info (GsmApplication *app,
   g_assert (info->pid != info->ppid);
   g_assert (info->ppid != -1 || info->pid == 0);
 
-  /* get cgroup data */
-  get_process_cgroup_info (*info);
-
-  procman::get_process_systemd_info (info);
+  /* get cgroup data; the systemd unit, session and owner are derived from
+   * the cgroups, so only look them up again when those changed */
+  if (get_process_cgroup_info (*info))
+    procman::get_process_systemd_info (info);
 }
 
 ProcInfo::ProcInfo(pid_t pid)
