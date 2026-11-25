@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs the instrumented binary ($1) on each tab to collect a PGO profile.
+# Needs a running graphical session (WAYLAND_DISPLAY or DISPLAY).
+set -e
+bin=$1; dir=$(dirname "$0")
+cc -shared -fPIC -O1 -o "$dir/pgo-quit.so" "$dir/pgo-quit.c" $(pkg-config --cflags --libs gio-2.0)
+# the binary isn't installed yet: use the schema it was built with
+schemas=$(mktemp -d)
+cp "$(dirname "$bin")"/*.gschema.xml "$(dirname "$bin")"/*.enums.xml "$schemas"/
+glib-compile-schemas "$schemas"
+export GSETTINGS_SCHEMA_DIR="$schemas"
+
+for tab in -r -p -f -r -p; do
+  echo "PGO training: $tab"
+  LD_PRELOAD="$dir/pgo-quit.so" PGO_SECONDS=20 "$bin" $tab >/dev/null 2>&1
+done
+rm -rf "$schemas"
+n=$(find "$(dirname "$bin")" -name '*.gcda' | wc -l)
+echo "PGO training: $n profile files"
+test "$n" -gt 0

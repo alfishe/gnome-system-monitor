@@ -1,0 +1,54 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,-O1 -Wl,-z,defs
+
+ifeq ($(DEB_HOST_ARCH_OS),linux)
+CONFFLAGS = -Dsystemd=true
+else
+CONFFLAGS = -Dsystemd=false
+endif
+
+include /usr/share/dpkg/architecture.mk
+
+%:
+	dh $@
+
+BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
+
+# LTO + profile-guided build: build instrumented, train (runs the app for
+# ~100 s, needs a graphical session), rebuild with the profile.
+# DEB_BUILD_OPTIONS=nopgo builds with LTO only (no session needed).
+ifneq (,$(filter nopgo,$(DEB_BUILD_OPTIONS)))
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFFLAGS) -Db_lto=true
+else
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFFLAGS) -Db_lto=true -Db_pgo=generate
+
+override_dh_auto_build:
+	dh_auto_build
+	debian/pgo-train $(BUILDDIR)/src/gnome-system-monitor
+	meson configure $(BUILDDIR) -Db_pgo=use
+	dh_auto_build
+endif
+
+execute_after_dh_auto_build:
+	docbook-to-man debian/gnome-system-monitor.sgml \
+		> debian/gnome-system-monitor.1
+
+execute_before_dh_auto_clean:
+	rm -f debian/gnome-system-monitor.1
+
+override_dh_installchangelogs:
+	dh_installchangelogs -XChangeLog
+
+execute_after_dh_auto_clean:
+	rm -f debian/pgo-quit.so
+
+override_dh_gnome_clean:
+
+# The code formatting test (only run when uncrustify is installed) already
+# fails on upstream files; the package build runs the data validation tests.
+override_dh_auto_test:
+	dh_auto_test -- --no-suite formatting
