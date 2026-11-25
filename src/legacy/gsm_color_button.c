@@ -36,8 +36,6 @@ typedef struct
   GdkRGBA color;
   gdouble fraction;             /* Only used by GSMCP_TYPE_PIE */
   guint type;
-  cairo_surface_t *image_buffer;
-  cairo_surface_t *mask_buffer;
   gdouble highlight;
 } GsmColorButtonPrivate;
 
@@ -67,53 +65,60 @@ static guint color_button_signals[LAST_SIGNAL] = {
   0
 };
 
+/* Rasterizes a 32x32 SVG resource at 2x (sharp on HiDPI) into an image
+ * surface. */
 static cairo_surface_t *
-fill_image_buffer_from_resource (cairo_t    *cr,
-                                 const char *path)
+load_icon_from_resource (const char *path)
 {
-  GBytes *bytes;
-  const guint8 *data;
-  gsize len;
   GError *error = NULL;
-  RsvgHandle *handle;
   RsvgRectangle viewport = {
     0, 0, 32, 32
   };
-  cairo_surface_t *tmp_surface;
-  cairo_t *tmp_cr;
+  GBytes *bytes = g_resources_lookup_data (path, 0, NULL);
+  gsize len;
+  const guint8 *data = g_bytes_get_data (bytes, &len);
+  RsvgHandle *handle = rsvg_handle_new_from_data (data, len, &error);
+  cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, 64, 64);
 
-  bytes = g_resources_lookup_data (path, 0, NULL);
-  data = g_bytes_get_data (bytes, &len);
+  cairo_surface_set_device_scale (surface, 2, 2);
 
-  handle = rsvg_handle_new_from_data (data, len, &error);
   if (handle == NULL)
     {
       g_warning ("rsvg_handle_new_from_data(\"%s\") failed: %s",
                  path, (error ? error->message : "unknown error"));
-      if (error)
-        g_error_free (error);
-      g_bytes_unref (bytes);
-      return NULL;
     }
-
-  tmp_surface = cairo_surface_create_similar (cairo_get_target (cr),
-                                              CAIRO_CONTENT_COLOR_ALPHA,
-                                              32, 32);
-  tmp_cr = cairo_create (tmp_surface);
-  if (!rsvg_handle_render_document (handle, tmp_cr, &viewport, &error))
+  else
     {
-      g_warning ("rsvg_handle_render_document(\"%s\") failed: %s",
-                 path, (error ? error->message : "unknown error"));
-      if (error)
-        g_error_free (error);
-      g_bytes_unref (bytes);
-      return NULL;
+      cairo_t *cr = cairo_create (surface);
+
+      if (!rsvg_handle_render_document (handle, cr, &viewport, &error))
+        g_warning ("rsvg_handle_render_document(\"%s\") failed: %s",
+                   path, (error ? error->message : "unknown error"));
+      cairo_destroy (cr);
+      g_object_unref (handle);
     }
 
-  cairo_destroy (tmp_cr);
-  g_object_unref (handle);
+  g_clear_error (&error);
   g_bytes_unref (bytes);
-  return tmp_surface;
+  return surface;
+}
+
+/* The arrow icon of the network and disk buttons, shared by all buttons
+ * and loaded once. */
+static void
+get_arrow_icon (cairo_surface_t **image,
+                cairo_surface_t **mask)
+{
+  static cairo_surface_t *arrow_image, *arrow_mask;
+
+  if (arrow_image == NULL)
+    {
+      arrow_image = load_icon_from_resource ("/org/gnome/gnome-system-monitor/pixmaps/arrow_overlay.svg");
+      arrow_mask = load_icon_from_resource ("/org/gnome/gnome-system-monitor/pixmaps/arrow_mask.svg");
+    }
+
+  *image = arrow_image;
+  *mask = arrow_mask;
 }
 
 static void
@@ -135,6 +140,7 @@ set_color_icon (GtkDragSource *drag_source,
   texture = gdk_texture_new_for_pixbuf (pixbuf);
 
   gtk_drag_source_set_icon (drag_source, GDK_PAINTABLE (texture), -2, -2);
+  g_object_unref (texture);
   g_object_unref (pixbuf);
 }
 
@@ -220,8 +226,6 @@ gsm_color_button_snapshot (GtkWidget   *widget,
         break;
 
       case GSMCP_TYPE_PIE:
-        if (width < 32)         // 32px minimum size
-          gtk_widget_set_size_request (widget, 32, 32);
         if (width < height)
           radius = width / 2;
         else
@@ -294,57 +298,22 @@ gsm_color_button_snapshot (GtkWidget   *widget,
         break;
 
       case GSMCP_TYPE_NETWORK_IN:
-        if (priv->image_buffer == NULL)
-          priv->image_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_overlay.svg");
-        if (priv->mask_buffer == NULL)
-          priv->mask_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_mask.svg");
-
-        gtk_widget_set_size_request (widget, 32, 32);
-        gsm_color_button_draw_colored_icon (cr, priv->image_buffer, priv->mask_buffer, TRUE);
-
-        break;
-
       case GSMCP_TYPE_NETWORK_OUT:
-        if (priv->image_buffer == NULL)
-          priv->image_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_overlay.svg");
-        if (priv->mask_buffer == NULL)
-          priv->mask_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_mask.svg");
-
-        gtk_widget_set_size_request (widget, 32, 32);
-        gsm_color_button_draw_colored_icon (cr, priv->image_buffer, priv->mask_buffer, FALSE);
-
-        break;
-
       case GSMCP_TYPE_DISK_READ:
-        if (priv->image_buffer == NULL)
-          priv->image_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_overlay.svg");
-        if (priv->mask_buffer == NULL)
-          priv->mask_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_mask.svg");
-
-        gtk_widget_set_size_request (widget, 32, 32);
-        gsm_color_button_draw_colored_icon (cr, priv->image_buffer, priv->mask_buffer, FALSE);
-
-        break;
-
       case GSMCP_TYPE_DISK_WRITE:
-        if (priv->image_buffer == NULL)
-          priv->image_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_overlay.svg");
-        if (priv->mask_buffer == NULL)
-          priv->mask_buffer =
-            fill_image_buffer_from_resource (cr, "/org/gnome/gnome-system-monitor/pixmaps/arrow_mask.svg");
+        {
+          cairo_surface_t *image, *mask;
 
-        gtk_widget_set_size_request (widget, 32, 32);
-        gsm_color_button_draw_colored_icon (cr, priv->image_buffer, priv->mask_buffer, TRUE);
-
+          get_arrow_icon (&image, &mask);
+          gsm_color_button_draw_colored_icon (cr, image, mask,
+                                              priv->type == GSMCP_TYPE_NETWORK_IN
+                                              || priv->type == GSMCP_TYPE_DISK_WRITE);
+        }
         break;
     }
+
+  // gtk_snapshot_append_cairo() returns a new reference
+  cairo_destroy (cr);
 }
 
 static void
@@ -560,9 +529,6 @@ gsm_color_button_finalize (GObject *object)
   g_free (priv->title);
   priv->title = NULL;
 
-  cairo_surface_destroy (priv->image_buffer);
-  priv->image_buffer = NULL;
-
   G_OBJECT_CLASS (gsm_color_button_parent_class)->finalize (object);
 }
 
@@ -633,7 +599,6 @@ gsm_color_button_init (GsmColorButton *color_button)
   priv->color.blue = 0;
   priv->fraction = 0.5;
   priv->type = GSMCP_TYPE_CPU;
-  priv->image_buffer = NULL;
   priv->title = g_strdup (_("Pick a Color"));   /* default title */
 
   GtkGesture *click_controller = gtk_gesture_click_new ();
@@ -689,6 +654,12 @@ gsm_color_button_set_cbtype (GsmColorButton *color_button,
 
   priv = gsm_color_button_get_instance_private (color_button);
   priv->type = type;
+
+  // the pie and the arrow icons are 32px
+  if (type == GSMCP_TYPE_CPU)
+    gtk_widget_set_size_request (GTK_WIDGET (color_button), -1, -1);
+  else
+    gtk_widget_set_size_request (GTK_WIDGET (color_button), 32, 32);
 
   gtk_widget_queue_draw (GTK_WIDGET (color_button));
 
