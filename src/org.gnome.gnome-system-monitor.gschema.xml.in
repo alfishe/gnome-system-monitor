@@ -174,6 +174,13 @@
       <summary>Default graph disk write color
       </summary>
     </key>
+    <key name="gpu-colors" type="as">
+      <default>['#2ec27e', '#1c71d8', '#e01b24', '#9141ac']</default>
+      <summary>GPU graph colors
+      </summary>
+      <description>Graph color of each GPU, in the order they are shown; reused cyclically if there are more GPUs
+      </description>
+    </key>
 
     <key name="network-in-bits" type="b">
       <default>false

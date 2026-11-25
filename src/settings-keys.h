@@ -29,6 +29,7 @@
 #define GSM_SETTING_NET_OUT_COLOR           "net-out-color"
 #define GSM_SETTING_DISK_READ_COLOR         "disk-read-color"
 #define GSM_SETTING_DISK_WRITE_COLOR        "disk-write-color"
+#define GSM_SETTING_GPU_COLORS              "gpu-colors"
 #define GSM_SETTING_LOGARITHMIC_SCALE       "logarithmic-scale"
 #define GSM_SETTING_DRAW_STACKED            "cpu-stacked-area-chart"
 #define GSM_SETTING_DRAW_SMOOTH             "cpu-smooth-graph"

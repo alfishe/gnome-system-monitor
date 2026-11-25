@@ -5,6 +5,7 @@ system_monitor_sources = [
   'argv.cpp',
   'cgroups.cpp',
   'disks.cpp',
+  'gpu.cpp',
   'gsm_gksu.cpp',
   'gsm_gnomesu.cpp',
   'gsm_pkexec.cpp',

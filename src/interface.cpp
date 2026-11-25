@@ -39,6 +39,7 @@
 #include "openfiles.h"
 #include "procproperties.h"
 #include "load-graph.h"
+#include "gpu.h"
 #include "util.h"
 #include "disks.h"
 #include "settings-keys.h"
@@ -211,6 +212,108 @@ cb_disk_read_color_changed (GsmColorButton *cp,
   GsmApplication *app = (GsmApplication *) data;
 
   change_settings_color (*app->settings.operator-> (), GSM_SETTING_DISK_READ_COLOR, cp);
+}
+
+static void
+cb_gpu_color_changed (GsmColorButton *cp,
+                      gpointer        data)
+{
+  auto app = GsmApplication::get ();
+  guint index = GPOINTER_TO_UINT (data);
+  std::vector<Glib::ustring> colors;
+
+  // keep the colors of the other GPUs, which may be defaults reused cyclically
+  for (guint i = 0; i < MAX (index + 1, app->config.gpu_colors.size ()); i++)
+    {
+      gchar *color = gdk_rgba_to_string (&app->config.gpu_colors[i % app->config.gpu_colors.size ()]);
+      colors.push_back (color);
+      g_free (color);
+    }
+
+  GdkRGBA button_color;
+  gsm_color_button_get_color (cp, &button_color);
+  gchar *color = gdk_rgba_to_string (&button_color);
+  colors[index] = color;
+  g_free (color);
+
+  app->settings->set_string_array (GSM_SETTING_GPU_COLORS, colors);
+}
+
+/* Adds a GPU section below the Disk section; only called if there is a
+ * supported GPU. */
+static void
+create_gpu_section (GsmApplication *app,
+                    GtkWidget      *disk_expander,
+                    const gchar    *title_template)
+{
+  LoadGraph *gpu_graph = new LoadGraph (LOAD_GRAPH_GPU);
+  LoadGraphLabels *labels = load_graph_get_labels (gpu_graph);
+
+  GtkWidget *expander = gtk_expander_new (NULL);
+  gtk_expander_set_expanded (GTK_EXPANDER (expander), TRUE);
+  gtk_widget_set_vexpand (expander, TRUE);
+  g_object_bind_property (expander, "expanded", expander, "vexpand", G_BINDING_DEFAULT);
+
+  GtkWidget *header = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_set_margin_start (header, 6);
+  GtkWidget *title = gtk_label_new (_("GPU"));
+  gtk_widget_set_halign (title, GTK_ALIGN_START);
+  PangoAttrList *attrs = pango_attr_list_new ();
+  pango_attr_list_insert (attrs, pango_attr_weight_new (PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes (GTK_LABEL (title), attrs);
+  pango_attr_list_unref (attrs);
+  gtk_box_append (GTK_BOX (header), title);
+  gtk_expander_set_label_widget (GTK_EXPANDER (expander), header);
+
+  GtkWidget *graph_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_hexpand (graph_box, TRUE);
+  gtk_widget_set_vexpand (graph_box, TRUE);
+  gtk_widget_set_margin_top (graph_box, 6);
+  gtk_expander_set_child (GTK_EXPANDER (expander), graph_box);
+
+  gtk_widget_set_size_request (GTK_WIDGET (load_graph_get_widget (gpu_graph)), -1, 70);
+  gtk_box_append (GTK_BOX (graph_box), GTK_WIDGET (load_graph_get_widget (gpu_graph)));
+
+  GtkGrid *table = GTK_GRID (gtk_grid_new ());
+  gtk_widget_set_margin_start (GTK_WIDGET (table), 54);
+  gtk_widget_set_margin_end (GTK_WIDGET (table), 12);
+  gtk_widget_set_hexpand (GTK_WIDGET (table), TRUE);
+  gtk_grid_set_column_spacing (table, 6);
+  gtk_grid_set_row_homogeneous (table, TRUE);
+  gtk_box_append (GTK_BOX (graph_box), GTK_WIDGET (table));
+
+  for (guint i = 0; i < gpu_graph->n; i++)
+    {
+      GsmColorButton *color_picker = gsm_color_button_new (&gpu_graph->colors.at (i), GSMCP_TYPE_CPU);
+      gtk_widget_set_valign (GTK_WIDGET (color_picker), GTK_ALIGN_CENTER);
+      gtk_widget_set_size_request (GTK_WIDGET (color_picker), 32, -1);
+      g_signal_connect (G_OBJECT (color_picker), "color-set",
+                        G_CALLBACK (cb_gpu_color_changed), GUINT_TO_POINTER (i));
+      gchar *title_text = g_strdup_printf (title_template, gtk_label_get_text (labels->gpu_name[i]));
+      gsm_color_button_set_title (color_picker, title_text);
+      g_free (title_text);
+      gtk_grid_attach (table, GTK_WIDGET (color_picker), 0, i, 1, 1);
+
+      gtk_widget_set_hexpand (GTK_WIDGET (labels->gpu_name[i]), TRUE);
+      gtk_grid_attach (table, GTK_WIDGET (labels->gpu_name[i]), 1, i, 1, 1);
+
+      const struct { const char *caption; GtkLabel *value; } fields[] = {
+        { _("Load"), labels->gpu_load[i] },
+        { _("Memory"), labels->gpu_vram[i] },
+        { _("Power"), labels->gpu_power[i] },
+      };
+      for (guint f = 0; f < G_N_ELEMENTS (fields); f++)
+        {
+          GtkWidget *caption = gtk_label_new (fields[f].caption);
+          gtk_widget_set_halign (caption, GTK_ALIGN_START);
+          gtk_widget_set_margin_start (caption, 12);
+          gtk_grid_attach (table, caption, 2 + 2 * f, i, 1, 1);
+          gtk_grid_attach (table, GTK_WIDGET (fields[f].value), 3 + 2 * f, i, 1, 1);
+        }
+    }
+
+  gtk_box_append (GTK_BOX (gtk_widget_get_parent (disk_expander)), expander);
+  app->gpu_graph = gpu_graph;
 }
 
 static void
@@ -446,6 +549,10 @@ create_sys_view (GsmApplication *app,
   gtk_widget_set_halign (GTK_WIDGET (load_graph_get_labels (disk_graph)->disk_write), GTK_ALIGN_START);
 
   app->disk_graph = disk_graph;
+
+  if (!gpu_devices ().empty ())
+    create_gpu_section (app, GTK_WIDGET (disk_expander), title_template);
+
   g_free (title_template);
 }
 
@@ -743,6 +850,8 @@ update_page_activities (GsmApplication *app)
       load_graph_start (app->mem_graph);
       load_graph_start (app->net_graph);
       load_graph_start (app->disk_graph);
+      if (app->gpu_graph)
+        load_graph_start (app->gpu_graph);
     }
   else
     {
@@ -750,6 +859,8 @@ update_page_activities (GsmApplication *app)
       load_graph_stop (app->mem_graph);
       load_graph_stop (app->net_graph);
       load_graph_stop (app->disk_graph);
+      if (app->gpu_graph)
+        load_graph_stop (app->gpu_graph);
     }
 
   if (strcmp (current_page, "disks") == 0)
@@ -801,6 +912,8 @@ cb_main_window_suspended (GtkWindow*,
           load_graph_stop (app->mem_graph);
           load_graph_stop (app->net_graph);
           load_graph_stop (app->disk_graph);
+      if (app->gpu_graph)
+        load_graph_stop (app->gpu_graph);
         }
       else if (current_page == "disks")
         {
@@ -820,6 +933,8 @@ cb_main_window_suspended (GtkWindow*,
           load_graph_start (app->mem_graph);
           load_graph_start (app->net_graph);
           load_graph_start (app->disk_graph);
+      if (app->gpu_graph)
+        load_graph_start (app->gpu_graph);
         }
       else if (current_page == "disks")
         {

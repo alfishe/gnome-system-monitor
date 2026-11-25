@@ -14,7 +14,8 @@ enum
   LOAD_GRAPH_CPU,
   LOAD_GRAPH_MEM,
   LOAD_GRAPH_NET,
-  LOAD_GRAPH_DISK
+  LOAD_GRAPH_DISK,
+  LOAD_GRAPH_GPU
 };
 
 enum
@@ -37,6 +38,11 @@ struct LoadGraphLabels
   GtkLabel *disk_read_total;
   GtkLabel *disk_write;
   GtkLabel *disk_write_total;
+  // one per GPU, see gpu.h
+  std::vector<GtkLabel*> gpu_name;
+  std::vector<GtkLabel*> gpu_load;
+  std::vector<GtkLabel*> gpu_vram;
+  std::vector<GtkLabel*> gpu_power;
 };
 
 struct LoadGraph

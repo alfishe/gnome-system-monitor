@@ -69,6 +69,7 @@ struct ProcConfig
   GdkRGBA net_out_color;
   GdkRGBA disk_read_color;
   GdkRGBA disk_write_color;
+  std::vector<GdkRGBA> gpu_colors;
   GdkRGBA bg_color;
   GdkRGBA frame_color;
   gint num_cpus;
@@ -264,6 +265,8 @@ LoadGraph        *cpu_graph;
 LoadGraph        *mem_graph;
 LoadGraph        *net_graph;
 LoadGraph        *disk_graph;
+// NULL if no supported GPU was found
+LoadGraph        *gpu_graph;
 
 GsmTreeView      *disk_list;
 

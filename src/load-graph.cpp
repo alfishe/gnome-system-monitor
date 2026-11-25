@@ -15,6 +15,7 @@
 
 #include "application.h"
 #include "load-graph.h"
+#include "gpu.h"
 #include "util.h"
 #include "legacy/gsm_color_button.h"
 
@@ -946,6 +947,66 @@ get_disk (LoadGraph *graph)
                             graph->labels.disk_read_total, graph->labels.disk_write_total);
 }
 
+static void
+get_gpu (LoadGraph *graph)
+{
+  const auto&gpus = gpu_devices ();
+
+  for (guint i = 0; i < graph->n; i++)
+    {
+      GpuSample s = gpus[i]->sample ();
+
+      graph->data[0][i] = s.load < 0 ? 0 : s.load;
+
+      if (!labels_shown (graph))
+        continue;
+
+      std::string name = gpus[i]->name ();
+      if (name != gtk_label_get_text (graph->labels.gpu_name[i]))
+        gtk_label_set_text (graph->labels.gpu_name[i], name.c_str ());
+
+      if (s.suspended)
+        {
+          gtk_label_set_text (graph->labels.gpu_load[i], _("Suspended"));
+          gtk_label_set_text (graph->labels.gpu_vram[i], "");
+          gtk_label_set_text (graph->labels.gpu_power[i], "");
+          continue;
+        }
+
+      gchar *text;
+
+      if (s.load >= 0)
+        // Translators: GPU usage percentage label: 95.7%
+        text = g_strdup_printf (_("%.1f%%"), s.load * 100.0);
+      else
+        text = g_strdup (_("n/a"));
+      gtk_label_set_text (graph->labels.gpu_load[i], text);
+      g_free (text);
+
+      if (s.vram_total)
+        {
+          gchar *used = procman::format_size (s.vram_used);
+          gchar *total = procman::format_size (s.vram_total);
+          // Translators: GPU memory usage: 1.9 GB of 6.4 GB
+          text = g_strdup_printf (_("%s of %s"), used, total);
+          g_free (used);
+          g_free (total);
+        }
+      else
+        text = g_strdup (_("n/a"));
+      gtk_label_set_text (graph->labels.gpu_vram[i], text);
+      g_free (text);
+
+      if (s.power >= 0)
+        // Translators: GPU power draw in watts: 76.9 W
+        text = g_strdup_printf (_("%.1f W"), s.power);
+      else
+        text = g_strdup (_("n/a"));
+      gtk_label_set_text (graph->labels.gpu_power[i], text);
+      g_free (text);
+    }
+}
+
 int
 load_graph_update_data (LoadGraph *graph)
 {
@@ -974,6 +1035,10 @@ load_graph_update_data (LoadGraph *graph)
 
       case LOAD_GRAPH_DISK:
         get_disk (graph);
+        break;
+
+      case LOAD_GRAPH_GPU:
+        get_gpu (graph);
         break;
 
       default:
@@ -1055,6 +1120,20 @@ LoadGraph::LoadGraph(guint type)
         labels.disk_write = init_tnum_label (10, GTK_ALIGN_END);
         labels.disk_write_total = init_tnum_label (10, GTK_ALIGN_END);
         break;
+
+      case LOAD_GRAPH_GPU:
+        n = gpu_devices ().size ();
+        for (guint i = 0; i < n; i++)
+          {
+            GtkLabel *name = GTK_LABEL (gtk_label_new (gpu_devices ()[i]->name ().c_str ()));
+            gtk_widget_set_halign (GTK_WIDGET (name), GTK_ALIGN_START);
+            gtk_label_set_ellipsize (name, PANGO_ELLIPSIZE_END);
+            labels.gpu_name.push_back (name);
+            labels.gpu_load.push_back (init_tnum_label (8, GTK_ALIGN_START));
+            labels.gpu_vram.push_back (init_tnum_label (18, GTK_ALIGN_START));
+            labels.gpu_power.push_back (init_tnum_label (8, GTK_ALIGN_START));
+          }
+        break;
     }
 
   colors.resize (n);
@@ -1094,6 +1173,15 @@ LoadGraph::LoadGraph(guint type)
         colors[0] = GsmApplication::get ()->config.disk_read_color;
         colors[1] = GsmApplication::get ()->config.disk_write_color;
         gsm_graph_set_max_value (disp, this->disk.max);
+        break;
+
+      case LOAD_GRAPH_GPU:
+        {
+          const auto&gpu_colors = GsmApplication::get ()->config.gpu_colors;
+          for (guint i = 0; i < n; i++)
+            colors[i] = gpu_colors[i % gpu_colors.size ()];
+          gsm_graph_set_max_value (disp, 100);
+        }
         break;
     }
 
