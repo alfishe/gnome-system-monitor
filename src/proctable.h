@@ -68,6 +68,7 @@ void          proctable_thaw (GsmApplication *app);
 void          proctable_reset_timeout (GsmApplication *app);
 
 void          get_process_memory_writable (ProcInfo *info);
+void          get_process_wchan (ProcInfo *info);
 void          get_last_selected (GtkTreeModel *model,
                                  GtkTreePath  *path,
                                  GtkTreeIter  *iter,

@@ -942,14 +942,15 @@ remove_info_from_tree (GsmApplication *app,
 }
 
 
-static std::string
-get_proc_kernel_wchan (glibtop_proc_kernel&obj)
+void
+get_process_wchan (ProcInfo *info)
 {
+  glibtop_proc_kernel prockernel;
   char buf[40] = { 0 };
 
-  g_strlcpy (buf, obj.wchan, sizeof(buf));
-  buf[sizeof(buf) - 1] = '\0';
-  return buf;
+  glibtop_get_proc_kernel (&prockernel, info->pid);
+  g_strlcpy (buf, prockernel.wchan, sizeof(buf));
+  info->wchan = buf;
 }
 
 static void
@@ -959,12 +960,14 @@ update_info (GsmApplication *app,
   glibtop_proc_state procstate;
   glibtop_proc_uid procuid;
   glibtop_proc_time proctime;
-  glibtop_proc_kernel prockernel;
   glibtop_proc_io procio;
   gdouble update_interval_seconds = app->config.update_interval / 1000;
 
-  glibtop_get_proc_kernel (&prockernel, info->pid);
-  info->wchan = get_proc_kernel_wchan (prockernel);
+  // reading the waiting channel costs two extra /proc reads per process;
+  // only do it while its column is shown (the properties dialog reads it
+  // itself)
+  if (gtk_tree_view_column_get_visible (gsm_tree_view_get_column_from_id (app->tree, COL_WCHAN)))
+    get_process_wchan (info);
 
   glibtop_get_proc_state (&procstate, info->pid);
   info->status = procstate.state;

@@ -63,6 +63,7 @@ fill_proc_properties (GtkTreeView *tree,
     return;
 
   get_process_memory_writable (info);
+  get_process_wchan (info);
 
   proc_arg proc_props[] = {
     { N_("Process Name"), g_strdup_printf ("%s", info->name.c_str ()) },
