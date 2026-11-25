@@ -1,12 +1,13 @@
 #include <config.h>
 
 #include <math.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include <glib/gi18n.h>
 
 #include <glibtop.h>
 #include <glibtop/cpu.h>
-#include <glibtop/disk.h>
 #include <glibtop/mem.h>
 #include <glibtop/swap.h>
 #include <glibtop/netload.h>
@@ -867,20 +868,54 @@ get_net (LoadGraph *graph)
                             graph->labels.net_in_total, graph->labels.net_out_total);
 }
 
+/* Sums the sectors read and written by physical disks.
+ *
+ * Only whole devices backed by hardware (/sys/block/<name>/device exists) are
+ * counted. Partitions and virtual devices (loop, device-mapper/LVM, md RAID,
+ * zram) are skipped because their I/O is already accounted on the underlying
+ * disks. This replaces glibtop_get_disk(), which spawned an lsblk + sed shell
+ * pipeline on every sample and double counted I/O on RAID setups. */
+static void
+read_disk_sectors (guint64 *read,
+                   guint64 *write)
+{
+  FILE *file = fopen ("/proc/diskstats", "re");
+  char line[512];
+
+  *read = *write = 0;
+
+  if (file == NULL)
+    return;
+
+  while (fgets (line, sizeof line, file))
+    {
+      unsigned major, minor;
+      char name[64];
+      unsigned long long reads, reads_merged, sectors_read, read_ms, writes, writes_merged, sectors_written;
+      char path[96];
+
+      if (sscanf (line, "%u %u %63s %llu %llu %llu %llu %llu %llu %llu",
+                  &major, &minor, name, &reads, &reads_merged, &sectors_read, &read_ms,
+                  &writes, &writes_merged, &sectors_written) != 10)
+        continue;
+
+      g_snprintf (path, sizeof path, "/sys/block/%s/device", name);
+      if (access (path, F_OK) != 0)
+        continue;
+
+      *read += sectors_read;
+      *write += sectors_written;
+    }
+
+  fclose (file);
+}
+
 static void
 get_disk (LoadGraph *graph)
 {
-  glibtop_disk disk;
-  gint32 i;
-  guint64 read = 0, write = 0;
+  guint64 read, write;
 
-  glibtop_get_disk (&disk);
-
-  for (i = 0; i < glibtop_global_server->ndisk; i++)
-    {
-      read += disk.xdisk_sectors_read[i];
-      write += disk.xdisk_sectors_write[i];
-    }
+  read_disk_sectors (&read, &write);
 
   // These sectors are standard unix 512 byte sectors, not the actual disk sectors.
   read *= 512;
