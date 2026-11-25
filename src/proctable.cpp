@@ -650,6 +650,10 @@ proctable_new (GsmApplication * const app)
 
   gsm_tree_view_load_state (proctree);
 
+  // All columns are GTK_TREE_VIEW_COLUMN_FIXED and every row has the same
+  // height, so let the tree view skip measuring each row's cells.
+  gtk_tree_view_set_fixed_height_mode (GTK_TREE_VIEW (proctree), TRUE);
+
   GtkIconTheme*theme = gtk_icon_theme_get_for_display (gdk_display_get_default ());
   g_signal_connect (G_OBJECT (theme), "changed", G_CALLBACK (cb_refresh_icons), app);
 
