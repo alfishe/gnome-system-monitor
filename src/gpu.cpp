@@ -21,12 +21,14 @@ read_file (const std::string&path)
   int fd = open (path.c_str (), O_RDONLY | O_CLOEXEC);
 
   if (fd < 0)
-    return {};
+    return {}
+  ;
 
   ssize_t n = read (fd, buf, sizeof buf - 1);
   close (fd);
   if (n <= 0)
-    return {};
+    return {}
+  ;
 
   buf[n] = '\0';
   g_strchomp (buf);
@@ -58,28 +60,63 @@ runtime_suspended (const std::string&pci_path)
 
 namespace {
 typedef void *nvmlDevice_t;
-struct nvmlUtilization_t { unsigned gpu, memory; };
-struct nvmlMemory_t { unsigned long long total, free, used; };
-struct nvmlProcessInfo_t { unsigned pid; unsigned long long usedGpuMemory; unsigned gpuInstanceId, computeInstanceId; };
-struct nvmlProcessUtilizationSample_t { unsigned pid; unsigned long long timeStamp; unsigned smUtil, memUtil, encUtil, decUtil; };
-enum { NVML_SUCCESS = 0, NVML_ERROR_NOT_FOUND = 6, NVML_ERROR_INSUFFICIENT_SIZE = 7 };
-enum { NVML_TEMPERATURE_GPU = 0 };
+struct nvmlUtilization_t
+{
+  unsigned gpu, memory;
+};
+struct nvmlMemory_t
+{
+  unsigned long long total, free, used;
+};
+struct nvmlProcessInfo_t
+{
+  unsigned pid;
+  unsigned long long usedGpuMemory;
+  unsigned gpuInstanceId, computeInstanceId;
+};
+struct nvmlProcessUtilizationSample_t
+{
+  unsigned pid;
+  unsigned long long timeStamp;
+  unsigned smUtil, memUtil, encUtil, decUtil;
+};
+enum
+{
+  NVML_SUCCESS = 0, NVML_ERROR_NOT_FOUND = 6, NVML_ERROR_INSUFFICIENT_SIZE = 7
+};
+enum
+{
+  NVML_TEMPERATURE_GPU = 0
+};
 const unsigned long long NVML_VALUE_NOT_AVAILABLE = ~0ULL;
-typedef int (*ProcessListFunc) (nvmlDevice_t, unsigned *, nvmlProcessInfo_t *);
+typedef int (*ProcessListFunc) (nvmlDevice_t,
+                                unsigned *,
+                                nvmlProcessInfo_t *);
 
 struct Nvml
 {
   bool loaded = false;
-  int (*DeviceGetHandleByPciBusId) (const char *, nvmlDevice_t *);
-  int (*DeviceGetName) (nvmlDevice_t, char *, unsigned);
-  int (*DeviceGetUtilizationRates) (nvmlDevice_t, nvmlUtilization_t *);
-  int (*DeviceGetMemoryInfo) (nvmlDevice_t, nvmlMemory_t *);
-  int (*DeviceGetPowerUsage) (nvmlDevice_t, unsigned *);
-  int (*DeviceGetTemperature) (nvmlDevice_t, int, unsigned *);
+  int (*DeviceGetHandleByPciBusId) (const char *,
+                                    nvmlDevice_t *);
+  int (*DeviceGetName) (nvmlDevice_t,
+                        char *,
+                        unsigned);
+  int (*DeviceGetUtilizationRates) (nvmlDevice_t,
+                                    nvmlUtilization_t *);
+  int (*DeviceGetMemoryInfo) (nvmlDevice_t,
+                              nvmlMemory_t *);
+  int (*DeviceGetPowerUsage) (nvmlDevice_t,
+                              unsigned *);
+  int (*DeviceGetTemperature) (nvmlDevice_t,
+                               int,
+                               unsigned *);
   // optional
   ProcessListFunc DeviceGetGraphicsRunningProcesses;
   ProcessListFunc DeviceGetComputeRunningProcesses;
-  int (*DeviceGetProcessUtilization) (nvmlDevice_t, nvmlProcessUtilizationSample_t *, unsigned *, unsigned long long);
+  int (*DeviceGetProcessUtilization) (nvmlDevice_t,
+                                      nvmlProcessUtilizationSample_t *,
+                                      unsigned *,
+                                      unsigned long long);
 
   /* Loads and initializes NVML on first use; false if unavailable. */
   bool
@@ -125,240 +162,240 @@ struct Nvml
 
 Nvml nvml;
 
-class NvidiaGpu : public GpuDevice
+class NvidiaGpu: public GpuDevice
 {
-  std::string pci_path;
-  std::string bus_id;
-  std::string device_name;
-  nvmlDevice_t device = nullptr;
-  // newest per-process utilization sample seen, so each call only
-  // returns the samples taken since the previous one
-  unsigned long long last_utilization_sample = 0;
-  std::vector<nvmlProcessInfo_t> processes;
-  std::vector<nvmlProcessUtilizationSample_t> samples;
+std::string pci_path;
+std::string bus_id;
+std::string device_name;
+nvmlDevice_t device = nullptr;
+// newest per-process utilization sample seen, so each call only
+// returns the samples taken since the previous one
+unsigned long long last_utilization_sample = 0;
+std::vector<nvmlProcessInfo_t> processes;
+std::vector<nvmlProcessUtilizationSample_t> samples;
 
-  /* Gets the NVML handle on first use; false if the GPU can't be queried
+/* Gets the NVML handle on first use; false if the GPU can't be queried
    * now (NVML calls would wake a runtime-suspended GPU). */
-  bool
-  ensure_device ()
-  {
-    if (runtime_suspended (pci_path))
-      return false;
+bool
+ensure_device ()
+{
+  if (runtime_suspended (pci_path))
+    return false;
 
-    if (device)
-      return true;
-
-    if (!nvml.load () || nvml.DeviceGetHandleByPciBusId (bus_id.c_str (), &device) != NVML_SUCCESS)
-      {
-        device = nullptr;
-        return false;
-      }
-
-    char buf[96];
-    if (nvml.DeviceGetName (device, buf, sizeof buf) == NVML_SUCCESS)
-      device_name = buf;
+  if (device)
     return true;
-  }
 
-  void
-  add_process_memory (ProcessListFunc func,
-                      GpuProcessMap&stats)
-  {
-    if (!func)
-      return;
+  if (!nvml.load () || nvml.DeviceGetHandleByPciBusId (bus_id.c_str (), &device) != NVML_SUCCESS)
+    {
+      device = nullptr;
+      return false;
+    }
 
-    unsigned count = processes.size ();
-    int rc = func (device, &count, processes.data ());
-    if (rc == NVML_ERROR_INSUFFICIENT_SIZE)
-      {
-        processes.resize (count + 8);
-        count = processes.size ();
-        rc = func (device, &count, processes.data ());
-      }
-    if (rc != NVML_SUCCESS)
-      return;
+  char buf[96];
+  if (nvml.DeviceGetName (device, buf, sizeof buf) == NVML_SUCCESS)
+    device_name = buf;
+  return true;
+}
 
-    for (unsigned i = 0; i < count; i++)
-      {
-        unsigned long long used = processes[i].usedGpuMemory;
-        if (used == NVML_VALUE_NOT_AVAILABLE)
-          continue;
-        // a process with both a graphics and a compute context is listed
-        // twice with the same usage
-        auto&memory = stats[processes[i].pid].memory;
-        memory = MAX (memory, used);
-      }
-  }
+void
+add_process_memory (ProcessListFunc func,
+                    GpuProcessMap&  stats)
+{
+  if (!func)
+    return;
+
+  unsigned count = processes.size ();
+  int rc = func (device, &count, processes.data ());
+  if (rc == NVML_ERROR_INSUFFICIENT_SIZE)
+    {
+      processes.resize (count + 8);
+      count = processes.size ();
+      rc = func (device, &count, processes.data ());
+    }
+  if (rc != NVML_SUCCESS)
+    return;
+
+  for (unsigned i = 0; i < count; i++)
+    {
+      unsigned long long used = processes[i].usedGpuMemory;
+      if (used == NVML_VALUE_NOT_AVAILABLE)
+        continue;
+      // a process with both a graphics and a compute context is listed
+      // twice with the same usage
+      auto&memory = stats[processes[i].pid].memory;
+      memory = MAX (memory, used);
+    }
+}
 
 public:
-  NvidiaGpu (const std::string&pci_path,
-             const std::string&bus_id)
-    : pci_path (pci_path), bus_id (bus_id), device_name (_("NVIDIA GPU"))
-  {
-  }
+NvidiaGpu (const std::string&pci_path,
+           const std::string&bus_id)
+  : pci_path (pci_path), bus_id (bus_id), device_name (_("NVIDIA GPU"))
+{
+}
 
-  std::string
-  name () override
-  {
-    return device_name;
-  }
+std::string
+name () override
+{
+  return device_name;
+}
 
-  GpuSample
-  sample () override
-  {
-    GpuSample s;
+GpuSample
+sample () override
+{
+  GpuSample s;
 
-    if (!ensure_device ())
-      {
-        s.suspended = runtime_suspended (pci_path);
-        return s;
-      }
+  if (!ensure_device ())
+    {
+      s.suspended = runtime_suspended (pci_path);
+      return s;
+    }
 
-    nvmlUtilization_t util;
-    if (nvml.DeviceGetUtilizationRates (device, &util) == NVML_SUCCESS)
-      s.load = util.gpu / 100.0;
+  nvmlUtilization_t util;
+  if (nvml.DeviceGetUtilizationRates (device, &util) == NVML_SUCCESS)
+    s.load = util.gpu / 100.0;
 
-    nvmlMemory_t mem;
-    if (nvml.DeviceGetMemoryInfo (device, &mem) == NVML_SUCCESS)
-      {
-        s.vram_used = mem.used;
-        s.vram_total = mem.total;
-      }
+  nvmlMemory_t mem;
+  if (nvml.DeviceGetMemoryInfo (device, &mem) == NVML_SUCCESS)
+    {
+      s.vram_used = mem.used;
+      s.vram_total = mem.total;
+    }
 
-    unsigned milliwatts;
-    if (nvml.DeviceGetPowerUsage (device, &milliwatts) == NVML_SUCCESS)
-      s.power = milliwatts / 1000.0;
+  unsigned milliwatts;
+  if (nvml.DeviceGetPowerUsage (device, &milliwatts) == NVML_SUCCESS)
+    s.power = milliwatts / 1000.0;
 
-    unsigned celsius;
-    if (nvml.DeviceGetTemperature (device, NVML_TEMPERATURE_GPU, &celsius) == NVML_SUCCESS)
-      s.temperature = celsius;
+  unsigned celsius;
+  if (nvml.DeviceGetTemperature (device, NVML_TEMPERATURE_GPU, &celsius) == NVML_SUCCESS)
+    s.temperature = celsius;
 
-    return s;
-  }
+  return s;
+}
 
-  bool
-  has_process_stats () const override
-  {
-    return true;
-  }
+bool
+has_process_stats () const override
+{
+  return true;
+}
 
-  void
-  add_process_stats (GpuProcessMap&stats) override
-  {
-    if (!ensure_device ())
-      return;
+void
+add_process_stats (GpuProcessMap&stats) override
+{
+  if (!ensure_device ())
+    return;
 
-    add_process_memory (nvml.DeviceGetGraphicsRunningProcesses, stats);
-    add_process_memory (nvml.DeviceGetComputeRunningProcesses, stats);
+  add_process_memory (nvml.DeviceGetGraphicsRunningProcesses, stats);
+  add_process_memory (nvml.DeviceGetComputeRunningProcesses, stats);
 
-    if (!nvml.DeviceGetProcessUtilization)
-      return;
+  if (!nvml.DeviceGetProcessUtilization)
+    return;
 
-    if (samples.empty ())
-      samples.resize (64);
+  if (samples.empty ())
+    samples.resize (64);
 
-    unsigned count = samples.size ();
-    int rc = nvml.DeviceGetProcessUtilization (device, samples.data (), &count, last_utilization_sample);
-    if (rc == NVML_ERROR_INSUFFICIENT_SIZE)
-      {
-        samples.resize (count + 16);
-        count = samples.size ();
-        rc = nvml.DeviceGetProcessUtilization (device, samples.data (), &count, last_utilization_sample);
-      }
-    if (rc != NVML_SUCCESS)   // NVML_ERROR_NOT_FOUND: no samples since the last call
-      return;
+  unsigned count = samples.size ();
+  int rc = nvml.DeviceGetProcessUtilization (device, samples.data (), &count, last_utilization_sample);
+  if (rc == NVML_ERROR_INSUFFICIENT_SIZE)
+    {
+      samples.resize (count + 16);
+      count = samples.size ();
+      rc = nvml.DeviceGetProcessUtilization (device, samples.data (), &count, last_utilization_sample);
+    }
+  if (rc != NVML_SUCCESS)     // NVML_ERROR_NOT_FOUND: no samples since the last call
+    return;
 
-    // The driver samples each process' utilization a few times per second;
-    // average them per process. Like other system monitors, a process' load
-    // is that of its busiest engine.
-    std::unordered_map<pid_t, std::pair<double, unsigned> > sums;
-    for (unsigned i = 0; i < count; i++)
-      {
-        const auto&u = samples[i];
-        auto&sum = sums[u.pid];
-        sum.first += MAX (u.smUtil, MAX (u.encUtil, u.decUtil));
-        sum.second++;
-        last_utilization_sample = MAX (last_utilization_sample, u.timeStamp);
-      }
-    for (const auto&i : sums)
-      stats[i.first].load += MIN (100.0, i.second.first / i.second.second);
-  }
+  // The driver samples each process' utilization a few times per second;
+  // average them per process. Like other system monitors, a process' load
+  // is that of its busiest engine.
+  std::unordered_map<pid_t, std::pair<double, unsigned> > sums;
+  for (unsigned i = 0; i < count; i++)
+    {
+      const auto&u = samples[i];
+      auto&sum = sums[u.pid];
+      sum.first += MAX (u.smUtil, MAX (u.encUtil, u.decUtil));
+      sum.second++;
+      last_utilization_sample = MAX (last_utilization_sample, u.timeStamp);
+    }
+  for (const auto&i : sums)
+    stats[i.first].load += MIN (100.0, i.second.first / i.second.second);
+}
 };
 
 
 /* AMD, through amdgpu's sysfs attributes */
 
-class AmdGpu : public GpuDevice
+class AmdGpu: public GpuDevice
 {
-  std::string pci_path;
-  std::string power_path;
-  std::string temperature_path;
-  std::string device_name;
+std::string pci_path;
+std::string power_path;
+std::string temperature_path;
+std::string device_name;
 
 public:
-  AmdGpu (const std::string&pci_path)
-    : pci_path (pci_path)
-  {
-    device_name = read_file (pci_path + "/product_name");
-    if (device_name.empty ())
-      device_name = _("AMD GPU");
+AmdGpu (const std::string&pci_path)
+  : pci_path (pci_path)
+{
+  device_name = read_file (pci_path + "/product_name");
+  if (device_name.empty ())
+    device_name = _("AMD GPU");
 
-    // average power (newer kernels report the current draw as power1_input)
-    std::string hwmon = pci_path + "/hwmon";
-    if (DIR *dir = opendir (hwmon.c_str ()))
-      {
-        while (struct dirent *e = readdir (dir))
-          {
-            if (strncmp (e->d_name, "hwmon", 5) != 0)
-              continue;
-            for (const char *file : { "/power1_average", "/power1_input" })
-              {
-                std::string path = hwmon + "/" + e->d_name + file;
-                if (power_path.empty () && access (path.c_str (), R_OK) == 0)
-                  power_path = path;
-              }
-            // temp1 is the "edge" sensor
-            std::string path = hwmon + "/" + e->d_name + "/temp1_input";
-            if (temperature_path.empty () && access (path.c_str (), R_OK) == 0)
-              temperature_path = path;
-          }
-        closedir (dir);
-      }
-  }
+  // average power (newer kernels report the current draw as power1_input)
+  std::string hwmon = pci_path + "/hwmon";
+  if (DIR *dir = opendir (hwmon.c_str ()))
+    {
+      while (struct dirent *e = readdir (dir))
+        {
+          if (strncmp (e->d_name, "hwmon", 5) != 0)
+            continue;
+          for (const char *file : { "/power1_average", "/power1_input" })
+            {
+              std::string path = hwmon + "/" + e->d_name + file;
+              if (power_path.empty () && access (path.c_str (), R_OK) == 0)
+                power_path = path;
+            }
+          // temp1 is the "edge" sensor
+          std::string path = hwmon + "/" + e->d_name + "/temp1_input";
+          if (temperature_path.empty () && access (path.c_str (), R_OK) == 0)
+            temperature_path = path;
+        }
+      closedir (dir);
+    }
+}
 
-  std::string
-  name () override
-  {
-    return device_name;
-  }
+std::string
+name () override
+{
+  return device_name;
+}
 
-  GpuSample
-  sample () override
-  {
-    GpuSample s;
+GpuSample
+sample () override
+{
+  GpuSample s;
 
-    // reading the attributes resumes a runtime-suspended GPU
-    if (runtime_suspended (pci_path))
-      {
-        s.suspended = true;
-        return s;
-      }
+  // reading the attributes resumes a runtime-suspended GPU
+  if (runtime_suspended (pci_path))
+    {
+      s.suspended = true;
+      return s;
+    }
 
-    guint64 value;
-    if (read_u64 (pci_path + "/gpu_busy_percent", &value))
-      s.load = value / 100.0;
+  guint64 value;
+  if (read_u64 (pci_path + "/gpu_busy_percent", &value))
+    s.load = value / 100.0;
 
-    read_u64 (pci_path + "/mem_info_vram_used", &s.vram_used);
-    read_u64 (pci_path + "/mem_info_vram_total", &s.vram_total);
+  read_u64 (pci_path + "/mem_info_vram_used", &s.vram_used);
+  read_u64 (pci_path + "/mem_info_vram_total", &s.vram_total);
 
-    if (!power_path.empty () && read_u64 (power_path, &value))
-      s.power = value / 1e6;    // microwatts
+  if (!power_path.empty () && read_u64 (power_path, &value))
+    s.power = value / 1e6;      // microwatts
 
-    if (!temperature_path.empty () && read_u64 (temperature_path, &value))
-      s.temperature = value / 1000.0;   // millidegrees
+  if (!temperature_path.empty () && read_u64 (temperature_path, &value))
+    s.temperature = value / 1000.0;     // millidegrees
 
-    return s;
-  }
+  return s;
+}
 };
 }
 
@@ -375,8 +412,10 @@ probe_gpus ()
 
   std::vector<std::string> addresses;
   while (struct dirent *e = readdir (dir))
-    if (e->d_name[0] != '.')
-      addresses.push_back (e->d_name);
+    {
+      if (e->d_name[0] != '.')
+        addresses.push_back (e->d_name);
+    }
   closedir (dir);
   std::sort (addresses.begin (), addresses.end ());
 

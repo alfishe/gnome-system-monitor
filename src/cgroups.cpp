@@ -73,7 +73,9 @@ read_cgroup_file (pid_t pid)
 
   ssize_t n;
   while ((n = read (fd, buf, sizeof buf)) > 0)
-    text.append (buf, n);
+    {
+      text.append (buf, n);
+    }
   close (fd);
 
   return text;

@@ -680,7 +680,10 @@ proctable_new (GsmApplication * const app)
     GVariant *order = g_settings_get_value (settings, "columns-order");
     gsize n_order;
     const gint32 *ids = (const gint32 *) g_variant_get_fixed_array (order, &n_order, sizeof (gint32));
-    const struct { gint column, after; } placement[] = {
+    const struct
+    {
+      gint column, after;
+    } placement[] = {
       { COL_GPU, COL_CPU },
       { COL_GPU_MEM, COL_MEM },
     };

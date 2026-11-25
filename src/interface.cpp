@@ -250,6 +250,7 @@ create_gpu_section (GsmApplication *app,
   LoadGraphLabels *labels = load_graph_get_labels (gpu_graph);
 
   GtkWidget *expander = gtk_expander_new (NULL);
+
   gtk_expander_set_expanded (GTK_EXPANDER (expander), TRUE);
   gtk_widget_set_vexpand (expander, TRUE);
   g_object_bind_property (expander, "expanded", expander, "vexpand", G_BINDING_DEFAULT);
@@ -297,7 +298,11 @@ create_gpu_section (GsmApplication *app,
       gtk_widget_set_hexpand (GTK_WIDGET (labels->gpu_name[i]), TRUE);
       gtk_grid_attach (table, GTK_WIDGET (labels->gpu_name[i]), 1, i, 1, 1);
 
-      const struct { const char *caption; GtkLabel *value; } fields[] = {
+      const struct
+      {
+        const char *caption;
+        GtkLabel *value;
+      } fields[] = {
         { _("Load"), labels->gpu_load[i] },
         { _("Memory"), labels->gpu_vram[i] },
         { _("Power"), labels->gpu_power[i] },
@@ -913,8 +918,8 @@ cb_main_window_suspended (GtkWindow*,
           load_graph_stop (app->mem_graph);
           load_graph_stop (app->net_graph);
           load_graph_stop (app->disk_graph);
-      if (app->gpu_graph)
-        load_graph_stop (app->gpu_graph);
+          if (app->gpu_graph)
+            load_graph_stop (app->gpu_graph);
         }
       else if (current_page == "disks")
         {
@@ -934,8 +939,8 @@ cb_main_window_suspended (GtkWindow*,
           load_graph_start (app->mem_graph);
           load_graph_start (app->net_graph);
           load_graph_start (app->disk_graph);
-      if (app->gpu_graph)
-        load_graph_start (app->gpu_graph);
+          if (app->gpu_graph)
+            load_graph_start (app->gpu_graph);
         }
       else if (current_page == "disks")
         {

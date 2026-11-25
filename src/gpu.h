@@ -44,22 +44,29 @@ typedef std::unordered_map<pid_t, GpuProcessStats> GpuProcessMap;
 class GpuDevice
 {
 public:
-  virtual ~GpuDevice() = default;
-  /* may change after the first successful sample (NVML loads lazily) */
-  virtual std::string name () = 0;
-  virtual GpuSample   sample () = 0;
-  /* Adds this GPU's per-process use to @stats. */
-  virtual void        add_process_stats (GpuProcessMap&) {}
-  virtual bool        has_process_stats () const { return false; }
+virtual ~GpuDevice() = default;
+/* may change after the first successful sample (NVML loads lazily) */
+virtual std::string name () = 0;
+virtual GpuSample   sample () = 0;
+/* Adds this GPU's per-process use to @stats. */
+virtual void
+add_process_stats (GpuProcessMap&)
+{
+}
+virtual bool
+has_process_stats () const
+{
+  return false;
+}
 };
 
 /* Supported GPUs of this machine, probed once. */
 const std::vector<std::unique_ptr<GpuDevice> >&gpu_devices ();
 
 /* Whether any GPU reports per-process use (only NVIDIA for now). */
-bool gpu_has_process_stats ();
+bool                                           gpu_has_process_stats ();
 
 /* Per-process use of all GPUs, since the previous call for the load. */
-GpuProcessMap gpu_process_stats ();
+GpuProcessMap                                  gpu_process_stats ();
 
 #endif /* _GSM_GPU_H_ */
