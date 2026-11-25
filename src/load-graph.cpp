@@ -458,6 +458,16 @@ load_graph_paint (GsmGraph             *,
     }
 }
 
+/* The data of hidden graphs keeps being sampled for the history, but their
+ * labels are only updated while shown: every label change queues a resize
+ * and redraw of the window. gsm_graph_start() samples right away when a
+ * hidden graph is shown again, so the labels are current immediately. */
+static bool
+labels_shown (LoadGraph *graph)
+{
+  return gsm_graph_is_started (graph->disp);
+}
+
 void
 load_graph_reset (LoadGraph *graph)
 {
@@ -520,10 +530,13 @@ get_load (LoadGraph *graph)
         }
 
       /* Update label */
-      // Translators: CPU usage percentage label: 95.7%
-      text = g_strdup_printf (_("%.1f%%"), load * 100.0f);
-      gtk_label_set_text (GTK_LABEL (graph->labels.cpu[i]), text);
-      g_free (text);
+      if (labels_shown (graph))
+        {
+          // Translators: CPU usage percentage label: 95.7%
+          text = g_strdup_printf (_("%.1f%%"), load * 100.0f);
+          gtk_label_set_text (GTK_LABEL (graph->labels.cpu[i]), text);
+          g_free (text);
+        }
     }
 
   graph->cpu.now ^= 1;
@@ -588,15 +601,18 @@ get_memory (LoadGraph *graph)
   /* There's no swap on LiveCD : 0.0f is better than NaN :) */
   swappercent = (swap.total ? (float)swap.used / (float)swap.total : 0.0f);
   mempercent = (float)mem.user / (float)mem.total;
-  set_memory_label_and_picker (GTK_LABEL (graph->labels.memory),
-                               GSM_COLOR_BUTTON (graph->mem_color_picker),
-                               mem.user, mem.cached, mem.total, mempercent);
+  if (labels_shown (graph))
+    {
+      set_memory_label_and_picker (GTK_LABEL (graph->labels.memory),
+                                   GSM_COLOR_BUTTON (graph->mem_color_picker),
+                                   mem.user, mem.cached, mem.total, mempercent);
 
-  set_memory_label_and_picker (GTK_LABEL (graph->labels.swap),
-                               GSM_COLOR_BUTTON (graph->swap_color_picker),
-                               swap.used, 0, swap.total, swappercent);
+      set_memory_label_and_picker (GTK_LABEL (graph->labels.swap),
+                                   GSM_COLOR_BUTTON (graph->swap_color_picker),
+                                   swap.used, 0, swap.total, swappercent);
 
-  gtk_widget_set_sensitive (GTK_WIDGET (graph->swap_color_picker), swap.total > 0);
+      gtk_widget_set_sensitive (GTK_WIDGET (graph->swap_color_picker), swap.total > 0);
+    }
 
   graph->data[0][0] = graph->translate_to_log_partial_if_needed (mempercent);
   graph->data[0][1] = swap.total > 0 ? graph->translate_to_log_partial_if_needed (swappercent) : -1.0;
@@ -810,6 +826,9 @@ handle_dynamic_max_value (LoadGraph             *graph,
     *graph_hash = hash;
 
   dynamic_scale (graph, values, max, din, dout, in_bits);
+
+  if (!labels_shown (graph))
+    return;
 
   gtk_label_set_text (GTK_LABEL (label_in), procman::format_rate (din, in_bits).c_str ());
   gtk_label_set_text (GTK_LABEL (label_in_total), procman::format_volume (in, totals_in_bits).c_str ());

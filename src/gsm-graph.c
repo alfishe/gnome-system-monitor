@@ -566,8 +566,10 @@ void gsm_graph_set_data_function (GsmGraph *self, GSourceFunc function, gpointer
 void
 gsm_graph_start (GsmGraph *self)
 {
-  _gsm_graph_set_draw (self, TRUE);
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
+  gboolean was_shown = priv->draw;
+
+  _gsm_graph_set_draw (self, TRUE);
   g_return_if_fail ( priv->data_function != NULL);
 
   if (!priv->sampling)
@@ -577,6 +579,14 @@ gsm_graph_start (GsmGraph *self)
       priv->data_function (priv->update_data);
       _gsm_graph_sample (self, g_get_monotonic_time ());
       gsm_graph_set_sampling (self, TRUE);
+    }
+  else if (!was_shown && g_get_monotonic_time () - priv->last_sample_time > 100 * G_TIME_SPAN_MILLISECOND)
+    {
+      // Hidden graphs don't update their labels; sample all graphs now so
+      // they are current when shown, and restart the shared clock from here.
+      gsm_graph_sample_all (NULL);
+      g_clear_handle_id (&sampling_source, g_source_remove);
+      sampling_source = g_timeout_add (sampling_period, gsm_graph_sample_all, NULL);
     }
 
   gsm_graph_set_animated (self, TRUE);
