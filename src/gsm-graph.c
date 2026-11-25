@@ -206,6 +206,7 @@ static guint animation_source;
 static gint64 animation_time;
 
 static void gsm_graph_set_animated (GsmGraph *self, gboolean animated);
+static void gsm_graph_set_sampling (GsmGraph *self, gboolean sampling);
 
 /* Fraction [0, 1] of the way from the latest sample to the next one at the
  * current animation step, so the scrolling speed is independent of the frame
@@ -334,10 +335,8 @@ gsm_graph_class_init (GsmGraphClass *klass)
 void
 gsm_graph_dispose (GObject *self)
 {
-  GsmGraphPrivate *priv = gsm_graph_get_instance_private (GSM_GRAPH (self));
-
   gsm_graph_clear_background (GSM_GRAPH (self));
-  g_clear_handle_id (&priv->sample_timeout, g_source_remove);
+  gsm_graph_set_sampling (GSM_GRAPH (self), FALSE);
   gsm_graph_set_animated (GSM_GRAPH (self), FALSE);
 
   G_OBJECT_CLASS (gsm_graph_parent_class)->dispose (G_OBJECT (self));
@@ -363,30 +362,59 @@ _gsm_graph_state_flags_changed (GtkWidget *widget,
     gsm_graph_stop (graph);
 }
 
-static gboolean
-_gsm_graph_sample (GsmGraph *self)
+static void
+_gsm_graph_sample (GsmGraph *self,
+                   gint64    now)
 {
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
 
   priv->data_function (priv->update_data);
   priv->data_generation++;
-  priv->last_sample_time = g_get_monotonic_time ();
+  priv->last_sample_time = now;
 
   if (gsm_graph_is_started (self))
     gtk_widget_queue_draw (GTK_WIDGET (self));
+}
+
+/* One sampling clock shared by all graphs: they all get new data with the
+ * same timestamp, so their scroll offsets advance in lockstep and the window
+ * repaints once per pixel of movement instead of once per graph. */
+static GList *sampled_graphs;
+static guint sampling_source;
+static guint sampling_period;
+
+static gboolean
+gsm_graph_sample_all (gpointer)
+{
+  gint64 now = g_get_monotonic_time ();
+
+  for (GList *l = sampled_graphs; l != NULL; l = l->next)
+    _gsm_graph_sample (GSM_GRAPH (l->data), now);
 
   return G_SOURCE_CONTINUE;
 }
 
 static void
-_gsm_graph_restart_sampling (GsmGraph *self)
+gsm_graph_set_sampling (GsmGraph *self,
+                        gboolean  sampling)
 {
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
 
-  g_clear_handle_id (&priv->sample_timeout, g_source_remove);
-  priv->sample_timeout = g_timeout_add (gsm_graph_get_sample_period (self),
-                                        (GSourceFunc) _gsm_graph_sample,
-                                        self);
+  if (sampling && !priv->sampling)
+    sampled_graphs = g_list_prepend (sampled_graphs, self);
+  else if (!sampling && priv->sampling)
+    sampled_graphs = g_list_remove (sampled_graphs, self);
+  priv->sampling = sampling;
+
+  guint period = sampled_graphs ? gsm_graph_get_sample_period (GSM_GRAPH (sampled_graphs->data)) : 0;
+
+  if (period != sampling_period || (period != 0 && sampling_source == 0))
+    {
+      g_clear_handle_id (&sampling_source, g_source_remove);
+      sampling_period = period;
+      if (period != 0)
+        sampling_source = g_timeout_add (period, gsm_graph_sample_all, NULL);
+    }
 }
 
 /* One animation step. A graph is only redrawn when its scroll offset moved
@@ -517,8 +545,10 @@ void gsm_graph_set_speed (GsmGraph *self, guint speed)
 
   if (priv->speed != speed) {
     priv->speed = speed;
-    if (priv->sample_timeout) {
-      _gsm_graph_restart_sampling (self);
+    if (priv->sampling) {
+      /* restarts the shared clock with the new period */
+      gsm_graph_set_sampling (self, FALSE);
+      gsm_graph_set_sampling (self, TRUE);
       gsm_graph_clear_background (self);
     }
   }
@@ -529,13 +559,8 @@ void gsm_graph_set_data_function (GsmGraph *self, GSourceFunc function, gpointer
   g_return_if_fail (GSM_IS_GRAPH (self));
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
 
-  g_clear_handle_id (&priv->sample_timeout, g_source_remove);
-
   priv->data_function = function;
   priv->update_data = data;
-
-  if (gsm_graph_is_started (self))
-    _gsm_graph_restart_sampling (self);
 }
 
 void
@@ -545,13 +570,13 @@ gsm_graph_start (GsmGraph *self)
   GsmGraphPrivate *priv = gsm_graph_get_instance_private (self);
   g_return_if_fail ( priv->data_function != NULL);
 
-  if (priv->sample_timeout == 0)
+  if (!priv->sampling)
     {
       // Update the data two times so the graph
       // doesn't wait one cycle to start drawing.
       priv->data_function (priv->update_data);
-      _gsm_graph_sample (self);
-      _gsm_graph_restart_sampling (self);
+      _gsm_graph_sample (self, g_get_monotonic_time ());
+      gsm_graph_set_sampling (self, TRUE);
     }
 
   gsm_graph_set_animated (self, TRUE);

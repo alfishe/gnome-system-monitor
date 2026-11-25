@@ -84,7 +84,7 @@ struct _GsmGraphPrivate
   
   // a new data sample is taken every speed * frames_per_unit ms
   guint frames_per_unit;
-  guint sample_timeout;
+  gboolean sampling;
   // monotonic time (us) of the latest sample
   gint64 last_sample_time;
   // scroll offset (device pixels) of the last queued frame
