@@ -573,7 +573,9 @@ set_memory_label_and_picker (GtkLabel      *label,
         {
           // xgettext: Used cache string, e.g.: "Cache 2.4GiB" or "Cache 2.4GB"
           cached_label = g_strdup_printf (_("Cache %s"), cached_text);
-          text = g_strdup_printf ("%s\n%s", text, cached_label);
+          char *text_with_cache = g_strdup_printf ("%s\n%s", text, cached_label);
+          g_free (text);
+          text = text_with_cache;
           g_free (cached_label);
         }
     }

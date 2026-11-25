@@ -69,34 +69,37 @@ fsusage_stats (const glibtop_fsusage *buf,
     }
 }
 
-static const char*
+static std::string
 get_icon_for_path (const char*path)
 {
-  GVolumeMonitor *monitor;
-  GList *mounts;
-  uint i;
-  GMount *mount;
-  GIcon *icon;
-  const char*name = "";
+  GVolumeMonitor *monitor = g_volume_monitor_get ();
+  GList *mounts = g_volume_monitor_get_mounts (monitor);
+  std::string name;
 
-  monitor = g_volume_monitor_get ();
-  mounts = g_volume_monitor_get_mounts (monitor);
-
-  for (i = 0; i < g_list_length (mounts); i++)
+  for (GList *l = mounts; l != NULL; l = l->next)
     {
-      mount = G_MOUNT (g_list_nth_data (mounts, i));
-      if (strcmp (g_mount_get_name (mount), path))
+      GMount *mount = G_MOUNT (l->data);
+      char *mount_name = g_mount_get_name (mount);
+      bool match = strcmp (mount_name, path) == 0;
+
+      g_free (mount_name);
+      if (!match)
         continue;
 
-      icon = g_mount_get_icon (mount);
+      GIcon *icon = g_mount_get_icon (mount);
 
       if (!icon)
         continue;
-      name = g_icon_to_string (icon);
+
+      char *icon_name = g_icon_to_string (icon);
+      if (icon_name)
+        name = icon_name;
+      g_free (icon_name);
       g_object_unref (icon);
     }
 
   g_list_free_full (mounts, g_object_unref);
+  g_object_unref (monitor);
   return name;
 }
 
@@ -106,15 +109,24 @@ get_icon_for_device (const char *mountpoint)
   GdkTexture *icon;
   GtkIconPaintable *icon_paintable;
   GtkIconTheme *icon_theme;
-  const char *icon_name = get_icon_for_path (mountpoint);
+  std::string icon_name = get_icon_for_path (mountpoint);
 
   // FIXME: defaults to a safe value
-  if (!strcmp (icon_name, ""))
+  if (icon_name.empty ())
     icon_name = "drive-harddisk";     // get_icon_for_path("/");
 
   icon_theme = gtk_icon_theme_get_for_display (gdk_display_get_default ());
-  icon_paintable = gtk_icon_theme_lookup_icon (icon_theme, icon_name, NULL, 24, 1, GTK_TEXT_DIR_NONE, GTK_ICON_LOOKUP_PRELOAD);
-  icon = gdk_texture_new_for_pixbuf (gdk_pixbuf_new_from_file_at_size (g_file_get_path (gtk_icon_paintable_get_file (icon_paintable)), 24, 24, NULL));
+  icon_paintable = gtk_icon_theme_lookup_icon (icon_theme, icon_name.c_str (), NULL, 24, 1, GTK_TEXT_DIR_NONE, GTK_ICON_LOOKUP_PRELOAD);
+  GFile *file = gtk_icon_paintable_get_file (icon_paintable);
+  char *path = file ? g_file_get_path (file) : NULL;
+  GdkPixbuf *pixbuf = path ? gdk_pixbuf_new_from_file_at_size (path, 24, 24, NULL) : NULL;
+
+  icon = pixbuf ? gdk_texture_new_for_pixbuf (pixbuf) : NULL;
+
+  g_clear_object (&pixbuf);
+  g_free (path);
+  g_clear_object (&file);
+  g_object_unref (icon_paintable);
 
   return icon;
 }
@@ -236,6 +248,9 @@ add_disk (GtkListStore             *list,
                       DISK_AVAIL, bavail,
                       DISK_USED, bused,
                       -1);
+
+  // the store holds its own reference
+  g_clear_object (&icon);
 }
 
 static void
