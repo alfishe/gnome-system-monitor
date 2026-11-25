@@ -301,6 +301,7 @@ create_gpu_section (GsmApplication *app,
         { _("Load"), labels->gpu_load[i] },
         { _("Memory"), labels->gpu_vram[i] },
         { _("Power"), labels->gpu_power[i] },
+        { _("Temperature"), labels->gpu_temperature[i] },
       };
       for (guint f = 0; f < G_N_ELEMENTS (fields); f++)
         {

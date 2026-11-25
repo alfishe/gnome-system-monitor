@@ -970,6 +970,7 @@ get_gpu (LoadGraph *graph)
           gtk_label_set_text (graph->labels.gpu_load[i], _("Suspended"));
           gtk_label_set_text (graph->labels.gpu_vram[i], "");
           gtk_label_set_text (graph->labels.gpu_power[i], "");
+          gtk_label_set_text (graph->labels.gpu_temperature[i], "");
           continue;
         }
 
@@ -1003,6 +1004,14 @@ get_gpu (LoadGraph *graph)
       else
         text = g_strdup (_("n/a"));
       gtk_label_set_text (graph->labels.gpu_power[i], text);
+      g_free (text);
+
+      if (s.temperature >= 0)
+        // Translators: GPU temperature: 71 °C
+        text = g_strdup_printf (_("%.0f °C"), s.temperature);
+      else
+        text = g_strdup (_("n/a"));
+      gtk_label_set_text (graph->labels.gpu_temperature[i], text);
       g_free (text);
     }
 }
@@ -1132,6 +1141,7 @@ LoadGraph::LoadGraph(guint type)
             labels.gpu_load.push_back (init_tnum_label (8, GTK_ALIGN_START));
             labels.gpu_vram.push_back (init_tnum_label (18, GTK_ALIGN_START));
             labels.gpu_power.push_back (init_tnum_label (8, GTK_ALIGN_START));
+            labels.gpu_temperature.push_back (init_tnum_label (6, GTK_ALIGN_START));
           }
         break;
     }

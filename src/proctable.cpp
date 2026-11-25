@@ -44,6 +44,7 @@
 
 #include "application.h"
 #include "proctable.h"
+#include "gpu.h"
 #include "prettytable.h"
 #include "util.h"
 #include "interface.h"
@@ -371,6 +372,8 @@ proctable_new (GsmApplication * const app)
     N_("Disk read"),
     N_("Disk write"),
     N_("Priority"),
+    /* xgettext:no-c-format */ N_("% GPU"),
+    N_("GPU Memory"),
     NULL,
     "POINTER"
   };
@@ -405,6 +408,8 @@ proctable_new (GsmApplication * const app)
                               G_TYPE_UINT64,        /* Disk read    */
                               G_TYPE_UINT64,        /* Disk write   */
                               G_TYPE_STRING,        /* Priority     */
+                              G_TYPE_DOUBLE,        /* % GPU        */
+                              G_TYPE_UINT64,        /* GPU Memory   */
                               GDK_TYPE_TEXTURE,     /* Icon         */
                               G_TYPE_POINTER,       /* ProcInfo     */
                               G_TYPE_STRING         /* Sexy tooltip */
@@ -448,7 +453,7 @@ proctable_new (GsmApplication * const app)
 
   gtk_tree_view_column_set_expand (column, TRUE);
 
-  for (i = COL_USER; i <= COL_PRIORITY; i++)
+  for (i = COL_USER; i <= COL_GPU_MEM; i++)
     {
       GtkTreeViewColumn *col;
       GtkCellRenderer *cell;
@@ -473,6 +478,7 @@ proctable_new (GsmApplication * const app)
           case COL_MEMRES:
           case COL_MEMSHARED:
           case COL_MEM:
+          case COL_GPU_MEM:
             gtk_tree_view_column_set_cell_data_func (col, cell,
                                                      &procman::size_na_cell_data_func,
                                                      GUINT_TO_POINTER (i),
@@ -480,6 +486,7 @@ proctable_new (GsmApplication * const app)
             break;
 
           case COL_CPU:
+          case COL_GPU:
             gtk_tree_view_column_set_cell_data_func (col, cell,
                                                      &procman::percentage_cell_data_func,
                                                      GUINT_TO_POINTER (i),
@@ -553,6 +560,8 @@ proctable_new (GsmApplication * const app)
           case COL_START_TIME:
           case COL_NICE:
           case COL_WCHAN:
+          case COL_GPU:
+          case COL_GPU_MEM:
             attrs = make_tnum_attr_list ();
             g_object_set (cell, "attributes", attrs, NULL);
             g_clear_pointer (&attrs, pango_attr_list_unref);
@@ -576,6 +585,8 @@ proctable_new (GsmApplication * const app)
           case COL_DISK_READ_CURRENT:
           case COL_DISK_WRITE_CURRENT:
           case COL_START_TIME:
+          case COL_GPU:
+          case COL_GPU_MEM:
             gtk_tree_sortable_set_sort_func (GTK_TREE_SORTABLE (model_sort), i,
                                              procman::number_compare_func,
                                              GUINT_TO_POINTER (i),
@@ -643,6 +654,14 @@ proctable_new (GsmApplication * const app)
       gsm_tree_view_add_excluded_column (proctree, COL_SESSION);
       gsm_tree_view_add_excluded_column (proctree, COL_SEAT);
       gsm_tree_view_add_excluded_column (proctree, COL_OWNER);
+    }
+
+  // no GPU reporting per-process use: the columns don't exist and no GPU
+  // code runs on updates
+  if (!gpu_has_process_stats ())
+    {
+      gsm_tree_view_add_excluded_column (proctree, COL_GPU);
+      gsm_tree_view_add_excluded_column (proctree, COL_GPU_MEM);
     }
 
   if (!can_show_security_context_column ())
@@ -830,6 +849,8 @@ update_info_mutable_cols (ProcInfo *info)
   tree_store_update (model, &info->node, COL_SESSION, info->session.c_str ());
   tree_store_update (model, &info->node, COL_SEAT, info->seat.c_str ());
   tree_store_update (model, &info->node, COL_OWNER, info->owner.c_str ());
+  tree_store_update (model, &info->node, COL_GPU, info->gpu_load);
+  tree_store_update (model, &info->node, COL_GPU_MEM, info->gpu_memory);
 }
 
 static void
@@ -1077,6 +1098,13 @@ refresh_list (GsmApplication *app,
                                                                                                gtk_tree_view_get_model (GTK_TREE_VIEW (app->tree))))));
   guint i;
 
+  // one query for all processes, only while a GPU column is shown
+  bool gpu_columns = gtk_tree_view_column_get_visible (gsm_tree_view_get_column_from_id (app->tree, COL_GPU))
+                     || gtk_tree_view_column_get_visible (gsm_tree_view_get_column_from_id (app->tree, COL_GPU_MEM));
+  GpuProcessMap gpu_stats;
+  if (gpu_columns)
+    gpu_stats = gpu_process_stats ();
+
   // Add or update processes in the process list
   for (i = 0; i < n; ++i)
     {
@@ -1089,6 +1117,13 @@ refresh_list (GsmApplication *app,
         }
 
       update_info (app, info);
+
+      if (gpu_columns)
+        {
+          auto it = gpu_stats.find (info->pid);
+          info->gpu_load = it != gpu_stats.end () ? it->second.load : 0;
+          info->gpu_memory = it != gpu_stats.end () ? it->second.memory : 0;
+        }
     }
 
 

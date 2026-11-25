@@ -43,6 +43,7 @@ struct LoadGraphLabels
   std::vector<GtkLabel*> gpu_load;
   std::vector<GtkLabel*> gpu_vram;
   std::vector<GtkLabel*> gpu_power;
+  std::vector<GtkLabel*> gpu_temperature;
 };
 
 struct LoadGraph

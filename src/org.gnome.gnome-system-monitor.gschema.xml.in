@@ -635,6 +635,34 @@
       </summary>
     </key>
 
+    <key name="col-27-width" type="i">
+      <default>70
+      </default>
+      <summary>Width of process “GPU” column
+      </summary>
+    </key>
+
+    <key name="col-27-visible" type="b">
+      <default>true
+      </default>
+      <summary>Show process “GPU” column on startup (only shown if a supported GPU is present)
+      </summary>
+    </key>
+
+    <key name="col-28-width" type="i">
+      <default>90
+      </default>
+      <summary>Width of process “GPU Memory” column
+      </summary>
+    </key>
+
+    <key name="col-28-visible" type="b">
+      <default>true
+      </default>
+      <summary>Show process “GPU Memory” column on startup (only shown if a supported GPU is present)
+      </summary>
+    </key>
+
 
   </schema>
 

@@ -100,6 +100,7 @@ struct MutableProcInfo
     disk_write_bytes_total (0ULL),
     disk_read_bytes_current (0ULL),
     disk_write_bytes_current (0ULL),
+    gpu_memory (0ULL),
     status (0U),
     pcpu (0),
     nice (0)
@@ -126,8 +127,10 @@ struct MutableProcInfo
   guint64 disk_write_bytes_total;
   guint64 disk_read_bytes_current;
   guint64 disk_write_bytes_current;
+  guint64 gpu_memory;
   guint status;
   gdouble pcpu;
+  gdouble gpu_load = 0;
   gint nice;
   std::string cgroup_name;
   // raw contents of /proc/<pid>/cgroup when cgroup_name was computed
