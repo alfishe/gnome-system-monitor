@@ -31,23 +31,23 @@ format_process_state (guint state)
   switch (state)
     {
       case GLIBTOP_PROCESS_RUNNING:
-        status = _("Running");
+        status = CACHED_("Running");
         break;
 
       case GLIBTOP_PROCESS_STOPPED:
-        status = _("Stopped");
+        status = CACHED_("Stopped");
         break;
 
       case GLIBTOP_PROCESS_ZOMBIE:
-        status = _("Zombie");
+        status = CACHED_("Zombie");
         break;
 
       case GLIBTOP_PROCESS_UNINTERRUPTIBLE:
-        status = _("Uninterruptible");
+        status = CACHED_("Uninterruptible");
         break;
 
       default:
-        status = _("Sleeping");
+        status = CACHED_("Sleeping");
         break;
     }
 
@@ -105,18 +105,18 @@ procman::format_duration_for_display (unsigned centiseconds)
 
   if (weeks)
     /* xgettext: weeks, days */
-    return g_strdup_printf (_("%uw%ud"), weeks, days);
+    return g_strdup_printf (CACHED_("%uw%ud"), weeks, days);
 
   if (days)
     /* xgettext: days, hours (0 -> 23) */
-    return g_strdup_printf (_("%ud%02uh"), days, hours);
+    return g_strdup_printf (CACHED_("%ud%02uh"), days, hours);
 
   if (hours)
     /* xgettext: hours (0 -> 23), minutes, seconds */
-    return g_strdup_printf (_("%u:%02u:%02u"), hours, minutes, seconds);
+    return g_strdup_printf (CACHED_("%u:%02u:%02u"), hours, minutes, seconds);
 
   /* xgettext: minutes, seconds, centiseconds */
-  return g_strdup_printf (_("%u:%02u.%02u"), minutes, seconds, centiseconds);
+  return g_strdup_printf (CACHED_("%u:%02u.%02u"), minutes, seconds, centiseconds);
 }
 
 
@@ -170,30 +170,30 @@ gchar *
 procman::get_nice_level (gint nice)
 {
   if (nice < -7)
-    return _("Very High");
+    return CACHED_("Very High");
   else if (nice < -2)
-    return _("High");
+    return CACHED_("High");
   else if (nice < 3)
-    return _("Normal");
+    return CACHED_("Normal");
   else if (nice < 7)
-    return _("Low");
+    return CACHED_("Low");
   else
-    return _("Very Low");
+    return CACHED_("Very Low");
 }
 
 gchar *
 procman::get_nice_level_with_priority (gint nice)
 {
   if (nice < -7)
-    return _("Very High Priority");
+    return CACHED_("Very High Priority");
   else if (nice < -2)
-    return _("High Priority");
+    return CACHED_("High Priority");
   else if (nice < 3)
-    return _("Normal Priority");
+    return CACHED_("Normal Priority");
   else if (nice < 7)
-    return _("Low Priority");
+    return CACHED_("Low Priority");
   else
-    return _("Very Low Priority");
+    return CACHED_("Very Low Priority");
 }
 
 gchar*
@@ -537,7 +537,7 @@ size_na_cell_data_func (GtkTreeViewColumn *,
   if (size == 0)
     {
       g_object_set (renderer,
-                    "text", _("N/A"),
+                    "text", CACHED_("N/A"),
                     "style", PANGO_STYLE_ITALIC,
                     NULL);
     }
@@ -584,7 +584,7 @@ io_rate_cell_data_func (GtkTreeViewColumn *,
 
   if (size == 0)
     g_object_set (renderer,
-                  "text", _("N/A"),
+                  "text", CACHED_("N/A"),
                   "style", PANGO_STYLE_ITALIC,
                   NULL);
   else
@@ -829,7 +829,7 @@ format_rate (guint64 rate,
 {
   char*bytes = procman::format_size (rate, want_bits);
   // xgettext: rate, 10MiB/s or 10Mbit/s
-  std::string formatted_rate (make_string (g_strdup_printf (_("%s/s"), bytes)));
+  std::string formatted_rate (make_string (g_strdup_printf (CACHED_("%s/s"), bytes)));
 
   g_free (bytes);
   return formatted_rate;

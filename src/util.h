@@ -4,6 +4,12 @@
 #include <gtkmm.h>
 #include <string>
 #include <vector>
+#include <glib/gi18n.h>
+
+/* gettext() for strings looked up per table cell: the translation is cached
+ * per call site, since the locale doesn't change at runtime and every
+ * gettext() call searches the loaded message catalogs. */
+#define CACHED_(msgid) ([] { static char *const translation = _(msgid); return translation; } ())
 
 using std::string;
 
