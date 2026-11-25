@@ -105,6 +105,19 @@ allocations).
 
 ## Installing on Ubuntu 24.04 as a .deb (replacing the stock package)
 
+### Prebuilt package
+
+A prebuilt `amd64` package for Ubuntu 24.04 is attached to the
+[v46.0-perf5 release](https://github.com/alfishe/gnome-system-monitor/releases/tag/v46.0-perf5):
+
+```sh
+wget https://github.com/alfishe/gnome-system-monitor/releases/download/v46.0-perf5/gnome-system-monitor_46.0-1build1+perf5_amd64.deb
+sudo apt install ./gnome-system-monitor_46.0-1build1+perf5_amd64.deb
+sudo apt-mark hold gnome-system-monitor
+```
+
+### Building the package yourself
+
 The `packaging/debian/` directory is Ubuntu's packaging for
 `46.0-1build1` with the build switched to LTO + profile-guided optimization.
 It produces `gnome-system-monitor_46.0-1build1+perf5_amd64.deb`, which has a
